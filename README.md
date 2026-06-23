@@ -111,6 +111,7 @@ Comandos útiles dentro del simulador:
 ```text
 set temperature 25.5
 set active true
+set devices.esp32_demo.active false
 global active false
 show
 state
@@ -199,14 +200,18 @@ nina.listenGlobalBool("active", applyActiveState);
 Y si el ESP32 quiere publicar un valor booleano propio:
 
 ```cpp
-nina.setBool("online", true);
+nina.setBool("sensor_ready", true);
 ```
 
 Eso actualiza:
 
 ```text
-devices.esp32_demo.online
+devices.esp32_demo.sensor_ready
 ```
+
+Nota: `online` ya se actualiza automáticamente cuando la librería NINA se
+registra contra el servidor. Usa `setBool()` para variables propias como
+`active`, `relay`, `sensor_ready`, etc.
 
 ## Estructura
 

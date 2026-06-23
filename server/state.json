@@ -6,14 +6,17 @@
     },
     "devices": {
       "esp32_demo": {
-        "active": false,
+        "active": true,
         "temperature": null,
-        "online": false
+        "online": true,
+        "type": "esp32",
+        "last_seen": "2026-06-23T21:18:46.125813+00:00",
+        "name": "esp32_demo"
       },
       "python_sim": {
         "type": "python_simulator",
         "online": true,
-        "last_seen": "2026-06-23T17:48:21.838811+00:00",
+        "last_seen": "2026-06-23T21:30:44.847367+00:00",
         "name": "python_sim",
         "temperature": 26,
         "active": true
@@ -23,15 +26,27 @@
       "online": true,
       "hostname": "DESKTOP-KNENLR0",
       "platform": "Windows",
-      "started_at": "2026-06-23T17:42:13.757464+00:00",
+      "started_at": "2026-06-23T21:00:09.507591+00:00",
       "stopped_at": null
     },
     "clients": {
       "tablet_6e35b939": {
         "type": "tablet",
         "online": true,
-        "last_seen": "2026-06-23T17:56:26.683320+00:00",
+        "last_seen": "2026-06-23T21:18:46.360341+00:00",
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
+      },
+      "phone_6b5dac9b": {
+        "type": "phone",
+        "online": false,
+        "last_seen": "2026-06-23T21:22:25.747790+00:00",
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_5_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/149.0.7827.137 Mobile/15E148 Safari/604.1"
+      },
+      "phone_ffcc853e": {
+        "type": "phone",
+        "online": false,
+        "last_seen": "2026-06-23T21:28:43.687972+00:00",
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1"
       }
     }
   }

@@ -13,7 +13,8 @@ void NINA::setDeviceId(const char* deviceId) {
     deviceId = "esp32_demo";
   }
 
-  snprintf(deviceScope, MAX_SCOPE_LENGTH, "devices.%s", deviceId);
+  snprintf(this->deviceId, MAX_DEVICE_ID_LENGTH, "%s", deviceId);
+  snprintf(deviceScope, MAX_SCOPE_LENGTH, "devices.%s", this->deviceId);
 }
 
 void NINA::begin(
@@ -95,12 +96,25 @@ void NINA::connectWiFi(const char* wifiSsid, const char* wifiPassword) {
   Serial.println(WiFi.localIP());
 }
 
+void NINA::registerDevice() {
+  StaticJsonDocument<256> doc;
+  doc["type"] = "register_device";
+  doc["device_id"] = deviceId;
+  doc["device_type"] = "esp32";
+  doc["name"] = deviceId;
+
+  String message;
+  serializeJson(doc, message);
+  webSocket.sendTXT(message);
+}
+
 void NINA::handleWebSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED:
       websocketConnected = true;
       Serial.print("WebSocket conectado al servidor NINA como ");
       Serial.println(deviceScope);
+      registerDevice();
       break;
 
     case WStype_DISCONNECTED:

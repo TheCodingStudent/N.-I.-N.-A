@@ -46,6 +46,24 @@ def parse_value(raw_value):
         return value
 
 
+def parse_target(raw_target, default_scope):
+    parts = raw_target.split(".")
+
+    if len(parts) == 1:
+        scope = default_scope
+        variable = parts[0]
+    else:
+        scope = ".".join(parts[:-1])
+        variable = parts[-1]
+
+    if not all(VALID_NAME.match(part) for part in scope.split(".")):
+        return None, None
+    if not VALID_NAME.match(variable):
+        return None, None
+
+    return scope, variable
+
+
 def format_json(data):
     return json.dumps(data, indent=2, ensure_ascii=False)
 
@@ -118,12 +136,13 @@ class DeviceSimulator:
     def print_help(self):
         print("""
 Comandos:
-  set <variable> <valor>        Cambia/crea una variable del dispositivo
-  global <variable> <valor>     Cambia/crea una variable global
-  show                          Muestra las variables de este dispositivo
-  state                         Muestra todo el estado recibido
-  help                          Muestra esta ayuda
-  exit                          Cierra el simulador
+  set <variable> <valor>                  Cambia/crea una variable del dispositivo
+  set <scope>.<variable> <valor>          Cambia/crea una variable usando ruta completa
+  global <variable> <valor>               Cambia/crea una variable global
+  show                                    Muestra las variables de este dispositivo
+  state                                   Muestra todo el estado recibido
+  help                                    Muestra esta ayuda
+  exit                                    Cierra el simulador
 
 Valores:
   true/false, on/off, 1/0, numeros, null o texto
@@ -132,6 +151,7 @@ Ejemplos:
   set temperature 25.5
   set active true
   set message hola
+  set devices.esp32_demo.active false
   global active false
 """.strip())
 
@@ -171,13 +191,20 @@ Ejemplos:
                     print("Formato: set <variable> <valor>")
                     continue
 
-                variable = parts[1]
-                if not VALID_NAME.match(variable):
-                    print("Nombre de variable invalido.")
-                    continue
-
                 value = parse_value(parts[2])
-                scope = "global" if command == "global" else self.scope
+
+                if command == "global":
+                    scope = "global"
+                    variable = parts[1]
+                    if not VALID_NAME.match(variable):
+                        print("Nombre de variable invalido.")
+                        continue
+                else:
+                    scope, variable = parse_target(parts[1], self.scope)
+                    if scope is None:
+                        print("Ruta invalida. Ejemplo: set devices.esp32_demo.active false")
+                        continue
+
                 self.set_variable(variable, value, scope)
                 print(f"Enviado: {scope}.{variable} = {value!r}")
                 continue

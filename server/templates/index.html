@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>N. I. N. A</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='11') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='12') }}">
 </head>
 <body>
   <div class="hud-noise" aria-hidden="true"></div>
@@ -12,16 +12,6 @@
 
   <main class="hud-shell">
     <section class="terminal-panel">
-      <div class="terminal-header">
-        <div>
-          <p class="eyebrow">Signal interface</p>
-          <h1>N. I. N. A</h1>
-        </div>
-        <div class="radar" aria-hidden="true">
-          <span></span>
-        </div>
-      </div>
-
       <div class="terminal-grid">
         <aside class="side-module">
           <p>LOCAL CORE</p>
@@ -35,11 +25,10 @@
 
     <footer class="dock-panel">
       <div class="dock-icons" aria-hidden="true">
-        <span>⌂</span>
-        <span>◈</span>
-        <span>◎</span>
-        <span>◌</span>
-        <span>✉</span>
+        <span>HOME</span>
+        <span>CORE</span>
+        <span>LINK</span>
+        <span>MAIL</span>
       </div>
       <div class="connection-copy">
         <p id="connection">Conectando con el servidor...</p>
@@ -48,7 +37,7 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='js/navbar.js', v='2') }}"></script>
+  <script src="{{ url_for('static', filename='js/navbar.js', v='3') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js', v='9') }}"></script>
 </body>
 </html>

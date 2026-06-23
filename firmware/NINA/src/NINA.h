@@ -35,6 +35,7 @@ class NINA {
 
  private:
   static const uint8_t MAX_BOOL_LISTENERS = 8;
+  static const uint8_t MAX_DEVICE_ID_LENGTH = 32;
   static const uint8_t MAX_SCOPE_LENGTH = 48;
 
   struct BoolListener {
@@ -47,9 +48,11 @@ class NINA {
   BoolListener boolListeners[MAX_BOOL_LISTENERS];
   uint8_t boolListenerCount;
   bool websocketConnected;
+  char deviceId[MAX_DEVICE_ID_LENGTH];
   char deviceScope[MAX_SCOPE_LENGTH];
 
   void connectWiFi(const char* wifiSsid, const char* wifiPassword);
+  void registerDevice();
   void handleWebSocketEvent(WStype_t type, uint8_t* payload, size_t length);
   void handleTextMessage(const uint8_t* payload, size_t length);
   void notifyBoolListeners(JsonObject scopes);
