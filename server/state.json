@@ -1,0 +1,30 @@
+{
+  "scopes": {
+    "global": {
+      "active": false,
+      "server_ready": true
+    },
+    "devices": {
+      "esp32_demo": {
+        "active": false,
+        "temperature": null,
+        "online": false
+      }
+    },
+    "server": {
+      "online": true,
+      "hostname": "DESKTOP-KNENLR0",
+      "platform": "Windows",
+      "started_at": "2026-06-23T17:24:41.288953+00:00",
+      "stopped_at": null
+    },
+    "clients": {
+      "tablet_6e35b939": {
+        "type": "tablet",
+        "online": true,
+        "last_seen": "2026-06-23T17:25:11.391408+00:00",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
+      }
+    }
+  }
+}

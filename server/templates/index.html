@@ -3,18 +3,128 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Conexión local</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='2') }}">
+  <title>N. I. N. A</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='6') }}">
 </head>
 <body>
-  <main>
-    <h1>Estado compartido</h1>
-    <div id="indicator" class="indicator" role="status" aria-label="Apagado"></div>
-    <p id="state-text">Apagado</p>
-    <button id="toggle" type="button">Encender</button>
-    <p id="connection">Conectando con el servidor…</p>
+  <div id="navbar-root"></div>
+
+  <main class="shell">
+    <section class="hero-panel">
+      <p class="eyebrow">Neural Interface · Network Assistant</p>
+      <h1>N. I. N. A</h1>
+      <p class="subtitle">Estado local organizado por scopes.</p>
+    </section>
+
+    <section class="scope-stack" aria-label="Scopes del sistema">
+      <details class="scope-frame" open>
+        <summary>
+          <span>global</span>
+          <small>Variables compartidas</small>
+        </summary>
+
+        <div class="state-list">
+          <article class="widget-card">
+            <div
+              class="indicator"
+              data-widget="indicator"
+              data-scope="global"
+              data-variable="active"
+              role="status"
+              aria-label="Apagado"
+            ></div>
+            <div class="state-copy">
+              <h2>active</h2>
+              <p data-widget="text" data-scope="global" data-variable="active" data-true="Encendido" data-false="Apagado">
+                Apagado
+              </p>
+            </div>
+            <button
+              data-widget="button"
+              data-action="toggle"
+              data-scope="global"
+              data-variable="active"
+              data-true="Apagar"
+              data-false="Encender"
+              type="button"
+            >
+              Encender
+            </button>
+          </article>
+        </div>
+      </details>
+
+      <details class="scope-frame" open>
+        <summary>
+          <span>server</span>
+          <small>Laptop anfitriona</small>
+        </summary>
+
+        <div class="state-list">
+          <article class="widget-card">
+            <div
+              class="indicator"
+              data-widget="indicator"
+              data-scope="server"
+              data-variable="online"
+              role="status"
+              aria-label="Servidor en línea"
+            ></div>
+            <div class="state-copy">
+              <h2>online</h2>
+              <p data-widget="text" data-scope="server" data-variable="online" data-true="Servidor en línea" data-false="Servidor apagado">
+                Servidor en línea
+              </p>
+            </div>
+          </article>
+        </div>
+      </details>
+
+      <details class="scope-frame">
+        <summary>
+          <span>devices.esp32_demo</span>
+          <small>ESP32 demo</small>
+        </summary>
+
+        <div class="state-list">
+          <article class="widget-card">
+            <div
+              class="indicator"
+              data-widget="indicator"
+              data-scope="devices.esp32_demo"
+              data-variable="active"
+              role="status"
+              aria-label="Apagado"
+            ></div>
+            <div class="state-copy">
+              <h2>active</h2>
+              <p data-widget="text" data-scope="devices.esp32_demo" data-variable="active" data-true="ESP32 activo" data-false="ESP32 apagado">
+                ESP32 apagado
+              </p>
+            </div>
+            <button
+              data-widget="button"
+              data-action="toggle"
+              data-scope="devices.esp32_demo"
+              data-variable="active"
+              data-true="Apagar"
+              data-false="Encender"
+              type="button"
+            >
+              Encender
+            </button>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <footer class="status-panel">
+      <p id="connection">Conectando con el servidor…</p>
+      <p id="client-identity"></p>
+    </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='js/app.js', v='2') }}"></script>
+  <script src="{{ url_for('static', filename='js/navbar.js', v='1') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='6') }}"></script>
 </body>
 </html>
