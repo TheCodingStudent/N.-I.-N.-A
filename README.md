@@ -91,22 +91,49 @@ clients.laptop_98ff12aa
 El servidor marca ese scope como `online: true` cuando el WebSocket se registra,
 y como `online: false` cuando la conexión se cierra.
 
-## Widgets
+## Simulador Python de dispositivo
 
-El HTML relaciona cada widget con una variable usando `data-scope` y
-`data-variable`:
+Puedes simular un ESP32/dispositivo desde Python con:
 
-```html
-<div
-  class="indicator"
-  data-widget="indicator"
-  data-scope="devices.esp32_demo"
-  data-variable="active">
-</div>
+```powershell
+.\.venv\Scripts\python.exe tools\device_simulator.py
 ```
 
-El JavaScript busca esos widgets, lee su scope y variable, y los actualiza
-cuando el servidor manda un nuevo estado.
+El simulador pide host, puerto, ID, tipo y nombre visible. Después se registra
+como:
+
+```text
+devices.<id_del_dispositivo>
+```
+
+Comandos útiles dentro del simulador:
+
+```text
+set temperature 25.5
+set active true
+global active false
+show
+state
+exit
+```
+
+## Widgets
+
+La página principal se construye dinámicamente desde el estado que envía Flask.
+El HTML solo contiene el contenedor `#scope-root`; `app.js` recorre `scopes` y
+crea un frame colapsable por cada scope, con una fila por cada variable.
+
+Por ahora las variables controlables se configuran en `app.js`:
+
+```js
+const controllableVariables = new Set([
+  'global.active',
+  'devices.esp32_demo.active'
+]);
+```
+
+Las variables booleanas muestran foco de estado. Si además están en
+`controllableVariables`, también muestran botón.
 
 ## Librería ESP32
 

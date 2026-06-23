@@ -4,7 +4,6 @@ const char* WIFI_SSID = "INFINITUM2515";
 const char* WIFI_PASSWORD = "A4xVEqX74J";
 const char* SERVER_HOST = "192.168.1.119";
 
-// LED integrado en muchos ESP32. Si usas relay, cambia este pin.
 const int ACTIVE_PIN = BUILTIN_LED;
 
 NINA nina("esp32_demo");

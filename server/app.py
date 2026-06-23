@@ -268,13 +268,41 @@ def register_client(client, message):
     return client_scope
 
 
-def mark_client_offline(client):
-    with clients_lock:
-        client_scope = connection_scopes.pop(client, None)
+def register_device(client, message):
+    device_id = message.get("device_id")
+    device_type = message.get("device_type")
+    device_name = message.get("name")
 
-    if client_scope:
+    if not isinstance(device_id, str) or not VALID_NAME.match(device_id):
+        return None
+    if not isinstance(device_type, str) or not VALID_NAME.match(device_type):
+        device_type = "simulator"
+
+    device_scope = f"devices.{device_id}"
+
+    with clients_lock:
+        connection_scopes[client] = device_scope
+
+    updates = {
+        "type": device_type,
+        "online": True,
+        "last_seen": now_iso(),
+    }
+
+    if isinstance(device_name, str) and device_name.strip():
+        updates["name"] = device_name.strip()[:80]
+
+    update_scope(device_scope, updates)
+    return device_scope
+
+
+def mark_connection_offline(client):
+    with clients_lock:
+        connection_scope = connection_scopes.pop(client, None)
+
+    if connection_scope:
         update_scope(
-            client_scope,
+            connection_scope,
             {
                 "online": False,
                 "last_seen": now_iso(),
@@ -324,6 +352,10 @@ def websocket(client):
                 register_client(client, message)
                 continue
 
+            if message.get("type") == "register_device":
+                register_device(client, message)
+                continue
+
             if message.get("type") != "set_variable":
                 continue
             if not isinstance(message.get("scope"), str):
@@ -342,7 +374,7 @@ def websocket(client):
     finally:
         with clients_lock:
             clients.discard(client)
-        mark_client_offline(client)
+        mark_connection_offline(client)
 
 
 if __name__ == "__main__":

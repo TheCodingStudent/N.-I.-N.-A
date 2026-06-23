@@ -1,7 +1,7 @@
 {
   "scopes": {
     "global": {
-      "active": false,
+      "active": true,
       "server_ready": true
     },
     "devices": {
@@ -9,20 +9,28 @@
         "active": false,
         "temperature": null,
         "online": false
+      },
+      "python_sim": {
+        "type": "python_simulator",
+        "online": true,
+        "last_seen": "2026-06-23T17:48:21.838811+00:00",
+        "name": "python_sim",
+        "temperature": 26,
+        "active": true
       }
     },
     "server": {
       "online": true,
       "hostname": "DESKTOP-KNENLR0",
       "platform": "Windows",
-      "started_at": "2026-06-23T17:24:41.288953+00:00",
+      "started_at": "2026-06-23T17:42:13.757464+00:00",
       "stopped_at": null
     },
     "clients": {
       "tablet_6e35b939": {
         "type": "tablet",
         "online": true,
-        "last_seen": "2026-06-23T17:25:11.391408+00:00",
+        "last_seen": "2026-06-23T17:56:26.683320+00:00",
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
       }
     }
