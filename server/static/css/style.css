@@ -1,0 +1,54 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background: #10131a;
+}
+
+main {
+  width: min(80vw, 320px);
+  padding: 32px;
+  text-align: center;
+  border-radius: 20px;
+  background: #1b202b;
+}
+
+.indicator {
+  width: 72px;
+  height: 72px;
+  margin: 24px auto;
+  border-radius: 50%;
+  background: #5d6470;
+  transition: background 150ms, box-shadow 150ms;
+}
+
+.indicator.active {
+  background: #35d07f;
+  box-shadow: 0 0 28px #35d07f99;
+}
+
+button {
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+#connection {
+  color: #aeb6c5;
+  font-size: 0.9rem;
+}

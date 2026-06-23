@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
