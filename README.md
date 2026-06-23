@@ -150,6 +150,12 @@ El ejemplo principal está en:
 firmware/NINA/examples/esp32_active_client/esp32_active_client.ino
 ```
 
+El ejemplo con DHT11 está en:
+
+```text
+firmware/NINA/examples/esp32_dht11_client/esp32_dht11_client.ino
+```
+
 El `.ino` está dentro de una carpeta con el mismo nombre para evitar conflictos
 con Arduino IDE.
 
@@ -213,6 +219,27 @@ Nota: `online` ya se actualiza automáticamente cuando la librería NINA se
 registra contra el servidor. Usa `setBool()` para variables propias como
 `active`, `relay`, `sensor_ready`, etc.
 
+Para publicar sensores periódicamente sin crear timers manuales:
+
+```cpp
+float readTemperature() {
+  return dht.readTemperature();
+}
+
+float readHumidity() {
+  return dht.readHumidity();
+}
+
+void setup() {
+  dht.begin();
+  nina.listenFloat("temperature", readTemperature, 5000);
+  nina.listenFloat("humidity", readHumidity, 5000);
+  nina.begin("TU_WIFI", "TU_PASSWORD", "192.168.1.119");
+}
+```
+
+Si el sensor devuelve `NaN` o infinito, NINA lo manda como `null`.
+
 ## Estructura
 
 ```text
@@ -225,6 +252,8 @@ firmware/
     `-- examples/
         `-- esp32_active_client/
             `-- esp32_active_client.ino
+        `-- esp32_dht11_client/
+            `-- esp32_dht11_client.ino
 server/
 |-- app.py
 |-- requirements.txt

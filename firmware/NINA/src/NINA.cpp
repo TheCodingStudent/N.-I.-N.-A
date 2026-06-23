@@ -1,10 +1,11 @@
 #include "NINA.h"
+#include <math.h>
 
-NINA::NINA() : boolListenerCount(0), websocketConnected(false) {
+NINA::NINA() : boolListenerCount(0), floatPublisherCount(0), websocketConnected(false) {
   setDeviceId("esp32_demo");
 }
 
-NINA::NINA(const char* deviceId) : boolListenerCount(0), websocketConnected(false) {
+NINA::NINA(const char* deviceId) : boolListenerCount(0), floatPublisherCount(0), websocketConnected(false) {
   setDeviceId(deviceId);
 }
 
@@ -37,6 +38,7 @@ void NINA::begin(
 
 void NINA::loop() {
   webSocket.loop();
+  publishFloatReaders();
 }
 
 bool NINA::listenBool(const char* variable, BoolCallback callback) {
@@ -67,12 +69,44 @@ bool NINA::listenGlobalBool(const char* variable, BoolCallback callback) {
   return true;
 }
 
+bool NINA::listenFloat(const char* variable, FloatReader reader, unsigned long intervalMs) {
+  return addFloatPublisher(deviceScope, variable, reader, intervalMs);
+}
+
+bool NINA::listenGlobalFloat(const char* variable, FloatReader reader, unsigned long intervalMs) {
+  return addFloatPublisher("global", variable, reader, intervalMs);
+}
+
 void NINA::setBool(const char* variable, bool value) {
   sendBool(deviceScope, variable, value);
 }
 
 void NINA::setGlobalBool(const char* variable, bool value) {
   sendBool("global", variable, value);
+}
+
+void NINA::setInt(const char* variable, int value) {
+  sendInt(deviceScope, variable, value);
+}
+
+void NINA::setGlobalInt(const char* variable, int value) {
+  sendInt("global", variable, value);
+}
+
+void NINA::setFloat(const char* variable, float value) {
+  sendFloat(deviceScope, variable, value);
+}
+
+void NINA::setGlobalFloat(const char* variable, float value) {
+  sendFloat("global", variable, value);
+}
+
+void NINA::setString(const char* variable, const char* value) {
+  sendString(deviceScope, variable, value);
+}
+
+void NINA::setGlobalString(const char* variable, const char* value) {
+  sendString("global", variable, value);
 }
 
 bool NINA::isConnected() const {
@@ -175,7 +209,93 @@ void NINA::notifyBoolListeners(JsonObject scopes) {
   }
 }
 
+void NINA::publishFloatReaders() {
+  if (!websocketConnected) {
+    return;
+  }
+
+  unsigned long now = millis();
+
+  for (uint8_t i = 0; i < floatPublisherCount; i++) {
+    FloatPublisher* publisher = &floatPublishers[i];
+
+    if (publisher->lastReadMs != 0 && now - publisher->lastReadMs < publisher->intervalMs) {
+      continue;
+    }
+
+    publisher->lastReadMs = now;
+    sendFloat(publisher->scope, publisher->variable, publisher->reader());
+  }
+}
+
+bool NINA::addFloatPublisher(const char* scope, const char* variable, FloatReader reader, unsigned long intervalMs) {
+  if (scope == nullptr || variable == nullptr || reader == nullptr || intervalMs == 0) {
+    return false;
+  }
+
+  if (floatPublisherCount >= MAX_FLOAT_READERS) {
+    return false;
+  }
+
+  floatPublishers[floatPublisherCount] = { scope, variable, reader, intervalMs, 0 };
+  floatPublisherCount++;
+  return true;
+}
+
 void NINA::sendBool(const char* scope, const char* variable, bool value) {
+  if (!websocketConnected || scope == nullptr || variable == nullptr) {
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["type"] = "set_variable";
+  doc["scope"] = scope;
+  doc["variable"] = variable;
+  doc["value"] = value;
+
+  String message;
+  serializeJson(doc, message);
+  webSocket.sendTXT(message);
+}
+
+void NINA::sendInt(const char* scope, const char* variable, int value) {
+  if (!websocketConnected || scope == nullptr || variable == nullptr) {
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["type"] = "set_variable";
+  doc["scope"] = scope;
+  doc["variable"] = variable;
+  doc["value"] = value;
+
+  String message;
+  serializeJson(doc, message);
+  webSocket.sendTXT(message);
+}
+
+void NINA::sendFloat(const char* scope, const char* variable, float value) {
+  if (!websocketConnected || scope == nullptr || variable == nullptr) {
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["type"] = "set_variable";
+  doc["scope"] = scope;
+  doc["variable"] = variable;
+
+  if (isfinite(value)) {
+    doc["value"] = value;
+  } else {
+    doc["value"] = nullptr;
+  }
+
+  String message;
+  serializeJson(doc, message);
+  webSocket.sendTXT(message);
+}
+
+void NINA::sendString(const char* scope, const char* variable, const char* value) {
   if (!websocketConnected || scope == nullptr || variable == nullptr) {
     return;
   }
