@@ -1,0 +1,88 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>N. I. N. A Editor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='15') }}">
+</head>
+<body>
+  <div class="hud-noise" aria-hidden="true"></div>
+  <div id="navbar-root"></div>
+
+  <main class="hud-shell tools-page">
+    <section class="terminal-panel">
+      <div class="workspace-tabs">
+        <button id="show-editor-tab" class="workspace-tab active" type="button">Editor</button>
+
+        <label class="tool-picker">
+          <span>Tools</span>
+          <select id="tool-tab-select">
+            <option value="">Escoger herramienta...</option>
+          </select>
+        </label>
+
+        <small id="tools-connection">Conectando...</small>
+      </div>
+
+      <section id="editor-workspace" class="workspace-panel active" aria-label="Editor de herramientas">
+        <div class="tool-editor-grid">
+          <aside class="tool-list-panel">
+            <div class="panel-heading">
+              <p>TOOLS</p>
+              <button id="new-tool" type="button">Nueva</button>
+            </div>
+            <div id="tool-list" class="tool-list"></div>
+          </aside>
+
+          <section class="code-panel" aria-label="Editor de herramienta">
+            <div class="editor-header">
+              <label>
+                <span>Nombre</span>
+                <input id="tool-title" type="text" placeholder="Mi herramienta">
+              </label>
+              <div class="editor-actions">
+                <button id="save-tool" type="button">Guardar</button>
+                <button id="delete-tool" class="danger-button" type="button">Borrar</button>
+              </div>
+            </div>
+
+            <div class="code-tabs" role="tablist" aria-label="Código de herramienta">
+              <button class="code-tab active" data-code-tab="html" type="button">HTML</button>
+              <button class="code-tab" data-code-tab="css" type="button">CSS</button>
+              <button class="code-tab" data-code-tab="js" type="button">JS</button>
+            </div>
+
+            <textarea id="code-html" class="code-editor active" spellcheck="false"></textarea>
+            <textarea id="code-css" class="code-editor" spellcheck="false"></textarea>
+            <textarea id="code-js" class="code-editor" spellcheck="false"></textarea>
+          </section>
+
+          <aside class="tool-sidebar">
+            <div class="panel-heading">
+              <p>VARIABLES</p>
+              <small>Insertar snippets</small>
+            </div>
+            <div id="variable-list" class="variable-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="tool-workspace" class="workspace-panel" aria-label="Herramienta renderizada">
+        <div class="tool-run-header">
+          <div>
+            <p>TOOL</p>
+            <h1 id="active-tool-title">Selecciona una herramienta</h1>
+          </div>
+          <button id="back-to-editor" type="button">Editor</button>
+        </div>
+
+        <div id="tools-runtime" class="tools-runtime single-tool"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/navbar.js', v='4') }}"></script>
+  <script src="{{ url_for('static', filename='js/tools.js', v='2') }}"></script>
+</body>
+</html>

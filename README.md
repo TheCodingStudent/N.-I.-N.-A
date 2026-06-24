@@ -34,7 +34,7 @@ Si Windows lo solicita, permite a Python comunicarse en redes privadas.
 Los valores reales viven en:
 
 ```text
-server/state.json
+server/json/state.json
 ```
 
 El estado usa scopes para evitar conflictos entre servidor, navegadores y
@@ -104,7 +104,7 @@ crea un frame colapsable por cada grupo, con una fila por cada variable.
 La información visual de la interfaz vive aparte en:
 
 ```text
-server/ui.json
+server/json/ui.json
 ```
 
 Esto separa dos ideas importantes:
@@ -139,6 +139,67 @@ control editable:
 
 ```cpp
 nina.listenBool("active", applyActiveState);
+```
+
+## Herramientas personalizadas
+
+La página de edición de herramientas vive separada del dashboard principal:
+
+```text
+http://localhost:5000/tools
+```
+
+Cada herramienta tiene tres pestañas con código real:
+
+```text
+HTML
+CSS
+JS
+```
+
+Las herramientas se guardan en:
+
+```text
+server/json/tools.json
+```
+
+El JavaScript de cada herramienta recibe dos objetos:
+
+```js
+tool // contenedor HTML de esa herramienta
+NINA // API para leer y cambiar variables del sistema
+```
+
+API inicial:
+
+```js
+NINA.get("devices.esp32_demo.active")
+NINA.set("devices.esp32_demo.active", true)
+NINA.toggle("devices.esp32_demo.active")
+NINA.on("devices.esp32_demo.active", (value) => {
+  console.log(value);
+})
+NINA.paths()
+```
+
+Ejemplo de herramienta:
+
+```html
+<div class="nina-card">
+  <h2>LED interno</h2>
+  <p>Estado: <span id="activeValue"></span></p>
+  <button id="activeToggle">Cambiar LED</button>
+</div>
+```
+
+```js
+NINA.on("devices.esp32_demo.active", (value) => {
+  tool.querySelector("#activeValue").textContent = value ? "Encendido" : "Apagado";
+});
+
+tool.querySelector("#activeToggle").addEventListener("click", () => {
+  NINA.toggle("devices.esp32_demo.active");
+});
 ```
 
 ## Simulador Python de dispositivo
@@ -288,13 +349,18 @@ firmware/
 server/
 |-- app.py
 |-- requirements.txt
-|-- state.json
-|-- ui.json
+|-- json/
+|   |-- state.json
+|   |-- ui.json
+|   `-- tools.json
 |-- static/
 |   |-- css/style.css
 |   |-- js/app.js
-|   `-- js/navbar.js
-`-- templates/index.html
+|   |-- js/navbar.js
+|   `-- js/tools.js
+`-- templates/
+    |-- index.html
+    `-- tools.html
 tools/
 `-- device_simulator.py
 ```

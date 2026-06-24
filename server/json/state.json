@@ -1,0 +1,49 @@
+{
+  "scopes": {
+    "global": {},
+    "server": {
+      "online": true,
+      "hostname": "DESKTOP-KNENLR0",
+      "platform": "Windows",
+      "started_at": "2026-06-24T17:56:24.683825+00:00",
+      "stopped_at": null
+    },
+    "clients": {
+      "tablet_6e35b939": {
+        "type": "tablet",
+        "online": false,
+        "last_seen": "2026-06-24T17:57:12.626658+00:00",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
+      },
+      "phone_ffcc853e": {
+        "type": "phone",
+        "online": false,
+        "last_seen": "2026-06-24T02:31:14.944613+00:00",
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1"
+      },
+      "tablet_6e35b939_tools": {
+        "type": "tablet",
+        "online": true,
+        "last_seen": "2026-06-24T17:57:12.768033+00:00",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
+      }
+    },
+    "devices": {
+      "esp32_demo": {
+        "type": "esp32",
+        "online": true,
+        "last_seen": "2026-06-24T02:27:02.718172+00:00",
+        "name": "esp32_demo",
+        "temperature": 26.7,
+        "humidity": 55,
+        "active": false
+      },
+      "python_sim": {
+        "type": "python_simulator",
+        "online": true,
+        "last_seen": "2026-06-24T02:08:35.875159+00:00",
+        "name": "python_sim"
+      }
+    }
+  }
+}

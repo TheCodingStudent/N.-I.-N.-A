@@ -1,19 +1,22 @@
-import atexit
+﻿import re
 import copy
 import json
-import platform
-import re
+import uuid
 import socket
-from datetime import datetime, timezone
+import atexit
+import platform
 from pathlib import Path
 from threading import Lock
+from datetime import datetime, timezone
 
 from flask import Flask, render_template
 from flask_sock import Sock
 
 
-STATE_FILE = Path(__file__).with_name("state.json")
-UI_FILE = Path(__file__).with_name("ui.json")
+JSON_DIR = Path(__file__).with_name("json")
+STATE_FILE = JSON_DIR / "state.json"
+UI_FILE = JSON_DIR / "ui.json"
+TOOLS_FILE = JSON_DIR / "tools.json"
 
 VALID_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 VALID_VALUE_TYPES = (bool, int, float, str, type(None))
@@ -38,6 +41,10 @@ DEFAULT_UI = {
     "controls": {}
 }
 
+DEFAULT_TOOLS = {
+    "tools": []
+}
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -56,9 +63,17 @@ class JsonStore:
             self.save(data)
             return data
 
-        return json.loads(self.path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(self.path.read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError:
+            corrupt_path = self.path.with_suffix(f".corrupt{self.path.suffix}")
+            self.path.replace(corrupt_path)
+            data = copy.deepcopy(self.default_data)
+            self.save(data)
+            return data
 
     def save(self, data):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary_file = self.path.with_suffix(f"{self.path.suffix}.tmp")
         temporary_file.write_text(
             json.dumps(data, indent=2, ensure_ascii=False),
@@ -374,6 +389,95 @@ class UiManager:
             return True
 
 
+class ToolManager:
+    """Owns tools.json and custom HTML/CSS/JS tools."""
+
+    def __init__(self, store):
+        self.store = store
+        self.lock = Lock()
+        self.tools = self._load()
+
+    def _load(self):
+        loaded_tools = self.store.load()
+
+        if not isinstance(loaded_tools, dict):
+            loaded_tools = copy.deepcopy(DEFAULT_TOOLS)
+
+        if "tools" not in loaded_tools or not isinstance(loaded_tools["tools"], list):
+            loaded_tools["tools"] = []
+            self.store.save(loaded_tools)
+
+        return loaded_tools
+
+    def snapshot(self):
+        with self.lock:
+            return copy.deepcopy(self.tools)
+
+    def save_tool(self, message):
+        title = message.get("title")
+        html = message.get("html")
+        css = message.get("css")
+        js = message.get("js")
+        tool_id = message.get("tool_id") or message.get("id")
+        enabled = message.get("enabled", True)
+
+        if not isinstance(title, str) or not title.strip():
+            title = "Nueva herramienta"
+        if not isinstance(html, str):
+            html = ""
+        if not isinstance(css, str):
+            css = ""
+        if not isinstance(js, str):
+            js = ""
+        if not isinstance(enabled, bool):
+            enabled = True
+        if not isinstance(tool_id, str) or not VALID_NAME.match(tool_id):
+            tool_id = f"tool_{uuid.uuid4().hex[:8]}"
+
+        next_tool = {
+            "id": tool_id,
+            "title": title.strip()[:80],
+            "html": html,
+            "css": css,
+            "js": js,
+            "enabled": enabled,
+            "updated_at": now_iso(),
+        }
+
+        with self.lock:
+            tools = self.tools.setdefault("tools", [])
+
+            for index, tool in enumerate(tools):
+                if isinstance(tool, dict) and tool.get("id") == tool_id:
+                    next_tool["created_at"] = tool.get("created_at") or now_iso()
+                    tools[index] = next_tool
+                    self.store.save(self.tools)
+                    return next_tool
+
+            next_tool["created_at"] = now_iso()
+            tools.append(next_tool)
+            self.store.save(self.tools)
+            return next_tool
+
+    def delete_tool(self, tool_id):
+        if not isinstance(tool_id, str) or not VALID_NAME.match(tool_id):
+            return False
+
+        with self.lock:
+            tools = self.tools.setdefault("tools", [])
+            next_tools = [
+                tool for tool in tools
+                if not isinstance(tool, dict) or tool.get("id") != tool_id
+            ]
+
+            if len(next_tools) == len(tools):
+                return False
+
+            self.tools["tools"] = next_tools
+            self.store.save(self.tools)
+            return True
+
+
 class ConnectionManager:
     """Tracks WebSocket clients and the scope attached to each connection."""
 
@@ -426,9 +530,10 @@ class ConnectionManager:
 class NinaServer:
     """Coordinates state, UI metadata and WebSocket messages."""
 
-    def __init__(self, state, ui, connections):
+    def __init__(self, state, ui, tools, connections):
         self.state = state
         self.ui = ui
+        self.tools = tools
         self.connections = connections
 
     def state_message(self):
@@ -436,6 +541,7 @@ class NinaServer:
             "type": "state",
             **self.state.snapshot(),
             "ui": self.ui.snapshot(),
+            "tools": self.tools.snapshot(),
         }
 
     def broadcast_state(self):
@@ -502,6 +608,14 @@ class NinaServer:
             self._handle_delete_device(message)
             return
 
+        if message_type == "save_tool":
+            self._handle_save_tool(message)
+            return
+
+        if message_type == "delete_tool":
+            self._handle_delete_tool(message)
+            return
+
         if message_type == "set_variable":
             self._handle_set_variable(message)
 
@@ -560,24 +674,38 @@ class NinaServer:
         if state_changed or ui_changed:
             self.broadcast_state()
 
+    def _handle_save_tool(self, message):
+        saved_tool = self.tools.save_tool(message)
+
+        if saved_tool:
+            self.broadcast_state()
+
+    def _handle_delete_tool(self, message):
+        tool_id = message.get("tool_id") or message.get("id")
+
+        if self.tools.delete_tool(tool_id):
+            self.broadcast_state()
+
 
 app = Flask(__name__)
 sock = Sock(app)
 
-state_store =   JsonStore(STATE_FILE, DEFAULT_STATE)
-ui_store =      JsonStore(UI_FILE, DEFAULT_UI)
+state_store = JsonStore(STATE_FILE, DEFAULT_STATE)
+ui_store = JsonStore(UI_FILE, DEFAULT_UI)
+tools_store = JsonStore(TOOLS_FILE, DEFAULT_TOOLS)
 state_manager = StateManager(state_store)
-ui_manager =    UiManager(ui_store)
-connections =   ConnectionManager()
-nina =          NinaServer(state_manager, ui_manager, connections)
+ui_manager = UiManager(ui_store)
+tool_manager = ToolManager(tools_store)
+connections = ConnectionManager()
+nina = NinaServer(state_manager, ui_manager, tool_manager, connections)
 
 atexit.register(state_manager.mark_server_offline)
 
 
 @app.after_request
 def disable_browser_cache(response):
-    # Durante el desarrollo, obliga a teléfonos y computadoras a cargar
-    # siempre la versión actual del HTML, CSS y JavaScript.
+    # Durante el desarrollo, obliga a telÃ©fonos y computadoras a cargar
+    # siempre la versiÃ³n actual del HTML, CSS y JavaScript.
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -589,6 +717,11 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/tools")
+def tools():
+    return render_template("tools.html")
+
+
 @sock.route("/ws")
 def websocket(client):
     nina.handle_client(client)
@@ -596,3 +729,4 @@ def websocket(client):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+

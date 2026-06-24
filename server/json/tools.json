@@ -1,0 +1,14 @@
+{
+  "tools": [
+    {
+      "id": "testing_8fa56e",
+      "title": "Testing",
+      "html": "<div class=\"nina-card\">\n  <h2>Crear variable</h2>\n  <span id=\"global_span\">False</span>\n  <button id=\"create_global\" type=\"button\">Toggle global.testing</button>\n</div>",
+      "css": ".nina-card {\n  display: flex;\n  flex-direction: column;\n  padding: 14px;\n  border: 1px solid rgba(255,255,255,.55);\n  border-radius: 10px;\n  background: rgba(255,255,255,.08);\n}\n\n.nina-card span {\n  width: 100%;\n  text-align: center;\n  color: rgb(0, 255, 0);\n}",
+      "js": "NINA.on(\"global.testing\", (value) => {\n  tool.querySelector(\"#global_span\").textContent = value ? \"Encendido\" : \"Apagado\";\n});\n\ntool.querySelector(\"#create_global\").addEventListener(\"click\", () => {\n  NINA.toggle(\"global.testing\");\n});",
+      "enabled": true,
+      "updated_at": "2026-06-24T17:20:46.667528+00:00",
+      "created_at": "2026-06-24T17:13:48.700619+00:00"
+    }
+  ]
+}
