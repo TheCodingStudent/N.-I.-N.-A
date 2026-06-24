@@ -1,9 +1,8 @@
-# Conexión local mínima
+# N. I. N. A
 
-Una página compartida entre el teléfono, la laptop y dispositivos como ESP32.
-El estado vive en `server/state.json`: cuando un dispositivo cambia una
-variable, Flask actualiza ese archivo y avisa inmediatamente a los demás
-mediante WebSocket.
+Una interfaz local para comunicar navegador, laptop y dispositivos como ESP32
+contra un servidor Flask. El estado se guarda en JSON y se sincroniza en tiempo
+real mediante WebSocket.
 
 ## Ejecutar servidor
 
@@ -15,31 +14,36 @@ pip install -r requirements.txt
 python app.py
 ```
 
-En la laptop abre `http://localhost:5000`.
+En la laptop abre:
 
-Para entrar desde el teléfono, ambos dispositivos deben estar en la misma red
-Wi-Fi. Consulta la dirección IPv4 de la laptop con `ipconfig` y abre desde el
-teléfono `http://IP-DE-LA-LAPTOP:5000`.
+```text
+http://localhost:5000
+```
+
+Desde el teléfono, ambos equipos deben estar en la misma red Wi-Fi. Consulta la
+IPv4 de la laptop con `ipconfig` y abre:
+
+```text
+http://IP-DE-LA-LAPTOP:5000
+```
 
 Si Windows lo solicita, permite a Python comunicarse en redes privadas.
 
 ## Estado persistente con scopes
 
-Las variables están guardadas en:
+Los valores reales viven en:
 
 ```text
 server/state.json
 ```
 
-El estado usa scopes para evitar conflictos entre el servidor, navegadores y
+El estado usa scopes para evitar conflictos entre servidor, navegadores y
 dispositivos:
 
 ```json
 {
   "scopes": {
-    "global": {
-      "active": false
-    },
+    "global": {},
     "server": {
       "online": true,
       "hostname": "MI-LAPTOP",
@@ -62,7 +66,7 @@ dispositivos:
 }
 ```
 
-Esto significa que estas variables son distintas:
+Estas variables son distintas:
 
 ```text
 global.active
@@ -91,6 +95,52 @@ clients.laptop_98ff12aa
 El servidor marca ese scope como `online: true` cuando el WebSocket se registra,
 y como `online: false` cuando la conexión se cierra.
 
+## Widgets y controles de usuario
+
+La página principal se construye dinámicamente desde el estado que envía Flask.
+El HTML solo contiene el contenedor `#scope-root`; `app.js` recorre `scopes` y
+crea un frame colapsable por cada grupo, con una fila por cada variable.
+
+La información visual de la interfaz vive aparte en:
+
+```text
+server/ui.json
+```
+
+Esto separa dos ideas importantes:
+
+```text
+devices.esp32_demo.active = false
+```
+
+significa el valor actual; mientras que:
+
+```json
+{
+  "controls": {
+    "devices.esp32_demo.active": {
+      "type": "toggle"
+    }
+  }
+}
+```
+
+significa que la UI puede mostrar un botón para controlar esa variable.
+
+La forma normal de declarar ese botón desde un ESP32 es pasar `true` como tercer
+parámetro de `listenBool`:
+
+```cpp
+nina.listenBool("active", applyActiveState, true);
+```
+
+Si omites ese tercer parámetro, la variable aparece como indicador, pero no como
+control editable:
+
+```cpp
+nina.listenBool("active", applyActiveState);
+```
+
 ## Simulador Python de dispositivo
 
 Puedes simular un ESP32/dispositivo desde Python con:
@@ -118,24 +168,6 @@ state
 exit
 ```
 
-## Widgets
-
-La página principal se construye dinámicamente desde el estado que envía Flask.
-El HTML solo contiene el contenedor `#scope-root`; `app.js` recorre `scopes` y
-crea un frame colapsable por cada scope, con una fila por cada variable.
-
-Por ahora las variables controlables se configuran en `app.js`:
-
-```js
-const controllableVariables = new Set([
-  'global.active',
-  'devices.esp32_demo.active'
-]);
-```
-
-Las variables booleanas muestran foco de estado. Si además están en
-`controllableVariables`, también muestran botón.
-
 ## Librería ESP32
 
 La librería Arduino está en:
@@ -156,17 +188,12 @@ El ejemplo con DHT11 está en:
 firmware/NINA/examples/esp32_dht11_client/esp32_dht11_client.ino
 ```
 
-El `.ino` está dentro de una carpeta con el mismo nombre para evitar conflictos
-con Arduino IDE.
-
 Para usarla desde Arduino IDE, copia la carpeta `firmware/NINA` dentro de tu
 carpeta de librerías de Arduino, por ejemplo:
 
 ```text
 Documentos/Arduino/libraries/NINA
 ```
-
-Después abre el ejemplo `esp32_active_client`.
 
 También instala estas librerías desde el Library Manager:
 
@@ -187,8 +214,8 @@ void applyActiveState(bool active) {
 void setup() {
   pinMode(2, OUTPUT);
 
-  // Escucha devices.esp32_demo.active.
-  nina.listenBool("active", applyActiveState);
+  // Escucha devices.esp32_demo.active y permite controlarlo desde la UI.
+  nina.listenBool("active", applyActiveState, true);
   nina.begin("TU_WIFI", "TU_PASSWORD", "192.168.1.119");
 }
 
@@ -197,10 +224,14 @@ void loop() {
 }
 ```
 
+Cuando el ESP32 se conecta, NINA asegura automáticamente que esa variable
+exista. Si `devices.esp32_demo.active` no existe, la crea con `false`. Si ya
+existe, no la sobrescribe.
+
 Si quieres escuchar una variable global, usa:
 
 ```cpp
-nina.listenGlobalBool("active", applyActiveState);
+nina.listenGlobalBool("active", applyActiveState, true);
 ```
 
 Y si el ESP32 quiere publicar un valor booleano propio:
@@ -250,16 +281,20 @@ firmware/
     |   |-- NINA.cpp
     |   `-- NINA.h
     `-- examples/
-        `-- esp32_active_client/
-            `-- esp32_active_client.ino
+        |-- esp32_active_client/
+        |   `-- esp32_active_client.ino
         `-- esp32_dht11_client/
             `-- esp32_dht11_client.ino
 server/
 |-- app.py
 |-- requirements.txt
 |-- state.json
+|-- ui.json
 |-- static/
 |   |-- css/style.css
-|   `-- js/app.js
+|   |-- js/app.js
+|   `-- js/navbar.js
 `-- templates/index.html
+tools/
+`-- device_simulator.py
 ```

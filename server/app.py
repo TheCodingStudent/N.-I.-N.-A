@@ -16,11 +16,10 @@ app = Flask(__name__)
 sock = Sock(app)
 
 STATE_FILE = Path(__file__).with_name("state.json")
+UI_FILE = Path(__file__).with_name("ui.json")
 DEFAULT_STATE = {
     "scopes": {
-        "global": {
-            "active": False,
-        },
+        "global": {},
         "server": {
             "online": True,
             "hostname": socket.gethostname(),
@@ -29,22 +28,21 @@ DEFAULT_STATE = {
             "stopped_at": None,
         },
         "clients": {},
-        "devices": {
-            "esp32_demo": {
-                "active": False,
-                "temperature": None,
-                "online": False,
-            }
-        },
+        "devices": {},
     }
+}
+DEFAULT_UI = {
+    "controls": {}
 }
 
 VALID_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 VALID_VALUE_TYPES = (bool, int, float, str, type(None))
 
 state_lock = Lock()
+ui_lock = Lock()
 clients_lock = Lock()
 state = None
+ui = None
 clients = set()
 connection_scopes = {}
 
@@ -53,17 +51,29 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def write_state(next_state):
-    temporary_file = STATE_FILE.with_suffix(".json.tmp")
+def write_json(path, data):
+    temporary_file = path.with_suffix(f"{path.suffix}.tmp")
     temporary_file.write_text(
-        json.dumps(next_state, indent=2, ensure_ascii=False),
+        json.dumps(data, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    temporary_file.replace(STATE_FILE)
+    temporary_file.replace(path)
+
+
+def write_state(next_state):
+    write_json(STATE_FILE, next_state)
 
 
 def save_state():
     write_state(state)
+
+
+def write_ui(next_ui):
+    write_json(UI_FILE, next_ui)
+
+
+def save_ui():
+    write_ui(ui)
 
 
 def migrate_state(loaded_state):
@@ -135,7 +145,26 @@ def load_state():
     return migrated_state
 
 
+def load_ui():
+    if not UI_FILE.exists():
+        loaded_ui = copy.deepcopy(DEFAULT_UI)
+        write_ui(loaded_ui)
+        return loaded_ui
+
+    loaded_ui = json.loads(UI_FILE.read_text(encoding="utf-8"))
+
+    if not isinstance(loaded_ui, dict):
+        loaded_ui = copy.deepcopy(DEFAULT_UI)
+
+    if "controls" not in loaded_ui or not isinstance(loaded_ui["controls"], dict):
+        loaded_ui["controls"] = {}
+        write_ui(loaded_ui)
+
+    return loaded_ui
+
+
 state = load_state()
+ui = load_ui()
 
 
 @app.after_request
@@ -151,6 +180,15 @@ def disable_browser_cache(response):
 def current_state():
     with state_lock:
         return {"scopes": copy.deepcopy(state["scopes"])}
+
+
+def current_ui():
+    with ui_lock:
+        return copy.deepcopy(ui)
+
+
+def state_message():
+    return {"type": "state", **current_state(), "ui": current_ui()}
 
 
 def send_json(client, message):
@@ -234,12 +272,53 @@ def update_scope(scope, updates):
 
         save_state()
 
-    broadcast({"type": "state", **current_state()})
+    broadcast(state_message())
     return True
 
 
 def set_variable(scope, name, value):
     return update_scope(scope, {name: value})
+
+
+def ensure_variable(scope, name, value):
+    if not valid_scope(scope) or not valid_variable(name):
+        return False
+    if not isinstance(value, VALID_VALUE_TYPES):
+        return False
+
+    with state_lock:
+        scope_values = get_scope_values(scope, create=True)
+
+        if name in scope_values:
+            return False
+
+        scope_values[name] = value
+        save_state()
+
+    broadcast(state_message())
+    return True
+
+
+def declare_input(scope, name, input_type):
+    if not valid_scope(scope) or not valid_variable(name):
+        return False
+    if input_type not in {"toggle", "number", "text"}:
+        return False
+
+    control_key = f"{scope}.{name}"
+    next_control = {"type": input_type}
+
+    with ui_lock:
+        controls = ui.setdefault("controls", {})
+
+        if controls.get(control_key) == next_control:
+            return False
+
+        controls[control_key] = next_control
+        save_ui()
+
+    broadcast(state_message())
+    return True
 
 
 def register_client(client, message):
@@ -335,7 +414,7 @@ def websocket(client):
         clients.add(client)
 
     # Una conexión nueva necesita conocer el estado completo actual.
-    send_json(client, {"type": "state", **current_state()})
+    send_json(client, state_message())
 
     try:
         while True:
@@ -354,6 +433,40 @@ def websocket(client):
 
             if message.get("type") == "register_device":
                 register_device(client, message)
+                continue
+
+            if message.get("type") == "ensure_variable":
+                if not isinstance(message.get("scope"), str):
+                    continue
+                if not isinstance(message.get("variable"), str):
+                    continue
+                if message["scope"] == "server":
+                    continue
+
+                ensure_variable(
+                    message["scope"],
+                    message["variable"],
+                    message.get("value"),
+                )
+                continue
+
+            if message.get("type") == "declare_input":
+                if not isinstance(message.get("scope"), str):
+                    continue
+                if not isinstance(message.get("variable"), str):
+                    continue
+                if message["scope"] == "server":
+                    continue
+
+                input_type = message.get("input_type") or message.get("input")
+                if not isinstance(input_type, str):
+                    continue
+
+                declare_input(
+                    message["scope"],
+                    message["variable"],
+                    input_type,
+                )
                 continue
 
             if message.get("type") != "set_variable":

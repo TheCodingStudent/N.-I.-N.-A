@@ -31,7 +31,7 @@ void setup() {
 
   dht.begin();
 
-  nina.listenBool("active", applyActiveState);
+  nina.listenBool("active", applyActiveState, true);
   nina.listenFloat("temperature", readTemperature, 5000);
   nina.listenFloat("humidity", readHumidity, 5000);
   nina.begin(WIFI_SSID, WIFI_PASSWORD, SERVER_HOST);

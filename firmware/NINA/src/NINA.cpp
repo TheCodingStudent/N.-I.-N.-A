@@ -41,7 +41,7 @@ void NINA::loop() {
   publishFloatReaders();
 }
 
-bool NINA::listenBool(const char* variable, BoolCallback callback) {
+bool NINA::listenBool(const char* variable, BoolCallback callback, bool user_input) {
   if (variable == nullptr || callback == nullptr) {
     return false;
   }
@@ -50,12 +50,12 @@ bool NINA::listenBool(const char* variable, BoolCallback callback) {
     return false;
   }
 
-  boolListeners[boolListenerCount] = { deviceScope, variable, callback };
+  boolListeners[boolListenerCount] = { deviceScope, variable, callback, user_input };
   boolListenerCount++;
   return true;
 }
 
-bool NINA::listenGlobalBool(const char* variable, BoolCallback callback) {
+bool NINA::listenGlobalBool(const char* variable, BoolCallback callback, bool user_input) {
   if (variable == nullptr || callback == nullptr) {
     return false;
   }
@@ -64,17 +64,17 @@ bool NINA::listenGlobalBool(const char* variable, BoolCallback callback) {
     return false;
   }
 
-  boolListeners[boolListenerCount] = { "global", variable, callback };
+  boolListeners[boolListenerCount] = { "global", variable, callback, user_input };
   boolListenerCount++;
   return true;
 }
 
-bool NINA::listenFloat(const char* variable, FloatReader reader, unsigned long intervalMs) {
-  return addFloatPublisher(deviceScope, variable, reader, intervalMs);
+bool NINA::listenFloat(const char* variable, FloatReader reader, unsigned long intervalMs, bool user_input) {
+  return addFloatPublisher(deviceScope, variable, reader, intervalMs, user_input);
 }
 
-bool NINA::listenGlobalFloat(const char* variable, FloatReader reader, unsigned long intervalMs) {
-  return addFloatPublisher("global", variable, reader, intervalMs);
+bool NINA::listenGlobalFloat(const char* variable, FloatReader reader, unsigned long intervalMs, bool user_input) {
+  return addFloatPublisher("global", variable, reader, intervalMs, user_input);
 }
 
 void NINA::setBool(const char* variable, bool value) {
@@ -142,6 +142,26 @@ void NINA::registerDevice() {
   webSocket.sendTXT(message);
 }
 
+void NINA::ensureBoolListeners() {
+  for (uint8_t i = 0; i < boolListenerCount; i++) {
+    ensureBool(boolListeners[i].scope, boolListeners[i].variable, false);
+  }
+}
+
+void NINA::declareUserInputs() {
+  for (uint8_t i = 0; i < boolListenerCount; i++) {
+    if (boolListeners[i].userInput) {
+      declareInput(boolListeners[i].scope, boolListeners[i].variable, "toggle");
+    }
+  }
+
+  for (uint8_t i = 0; i < floatPublisherCount; i++) {
+    if (floatPublishers[i].userInput) {
+      declareInput(floatPublishers[i].scope, floatPublishers[i].variable, "number");
+    }
+  }
+}
+
 void NINA::handleWebSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED:
@@ -149,6 +169,8 @@ void NINA::handleWebSocketEvent(WStype_t type, uint8_t* payload, size_t length) 
       Serial.print("WebSocket conectado al servidor NINA como ");
       Serial.println(deviceScope);
       registerDevice();
+      ensureBoolListeners();
+      declareUserInputs();
       break;
 
     case WStype_DISCONNECTED:
@@ -228,7 +250,7 @@ void NINA::publishFloatReaders() {
   }
 }
 
-bool NINA::addFloatPublisher(const char* scope, const char* variable, FloatReader reader, unsigned long intervalMs) {
+bool NINA::addFloatPublisher(const char* scope, const char* variable, FloatReader reader, unsigned long intervalMs, bool userInput) {
   if (scope == nullptr || variable == nullptr || reader == nullptr || intervalMs == 0) {
     return false;
   }
@@ -237,9 +259,25 @@ bool NINA::addFloatPublisher(const char* scope, const char* variable, FloatReade
     return false;
   }
 
-  floatPublishers[floatPublisherCount] = { scope, variable, reader, intervalMs, 0 };
+  floatPublishers[floatPublisherCount] = { scope, variable, reader, intervalMs, 0, userInput };
   floatPublisherCount++;
   return true;
+}
+
+void NINA::declareInput(const char* scope, const char* variable, const char* inputType) {
+  if (!websocketConnected || scope == nullptr || variable == nullptr || inputType == nullptr) {
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["type"] = "declare_input";
+  doc["scope"] = scope;
+  doc["variable"] = variable;
+  doc["input_type"] = inputType;
+
+  String message;
+  serializeJson(doc, message);
+  webSocket.sendTXT(message);
 }
 
 void NINA::sendBool(const char* scope, const char* variable, bool value) {
@@ -249,6 +287,22 @@ void NINA::sendBool(const char* scope, const char* variable, bool value) {
 
   StaticJsonDocument<256> doc;
   doc["type"] = "set_variable";
+  doc["scope"] = scope;
+  doc["variable"] = variable;
+  doc["value"] = value;
+
+  String message;
+  serializeJson(doc, message);
+  webSocket.sendTXT(message);
+}
+
+void NINA::ensureBool(const char* scope, const char* variable, bool value) {
+  if (!websocketConnected || scope == nullptr || variable == nullptr) {
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["type"] = "ensure_variable";
   doc["scope"] = scope;
   doc["variable"] = variable;
   doc["value"] = value;

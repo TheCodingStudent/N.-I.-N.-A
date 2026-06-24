@@ -26,10 +26,10 @@ class NINA {
 
   void loop();
 
-  bool listenBool(const char* variable, BoolCallback callback);
-  bool listenGlobalBool(const char* variable, BoolCallback callback);
-  bool listenFloat(const char* variable, FloatReader reader, unsigned long intervalMs);
-  bool listenGlobalFloat(const char* variable, FloatReader reader, unsigned long intervalMs);
+  bool listenBool(const char* variable, BoolCallback callback, bool user_input = false);
+  bool listenGlobalBool(const char* variable, BoolCallback callback, bool user_input = false);
+  bool listenFloat(const char* variable, FloatReader reader, unsigned long intervalMs, bool user_input = false);
+  bool listenGlobalFloat(const char* variable, FloatReader reader, unsigned long intervalMs, bool user_input = false);
 
   void setBool(const char* variable, bool value);
   void setGlobalBool(const char* variable, bool value);
@@ -52,6 +52,7 @@ class NINA {
     const char* scope;
     const char* variable;
     BoolCallback callback;
+    bool userInput;
   };
 
   struct FloatPublisher {
@@ -60,6 +61,7 @@ class NINA {
     FloatReader reader;
     unsigned long intervalMs;
     unsigned long lastReadMs;
+    bool userInput;
   };
 
   WebSocketsClient webSocket;
@@ -73,12 +75,16 @@ class NINA {
 
   void connectWiFi(const char* wifiSsid, const char* wifiPassword);
   void registerDevice();
+  void ensureBoolListeners();
+  void declareUserInputs();
   void handleWebSocketEvent(WStype_t type, uint8_t* payload, size_t length);
   void handleTextMessage(const uint8_t* payload, size_t length);
   void notifyBoolListeners(JsonObject scopes);
   void publishFloatReaders();
-  bool addFloatPublisher(const char* scope, const char* variable, FloatReader reader, unsigned long intervalMs);
+  bool addFloatPublisher(const char* scope, const char* variable, FloatReader reader, unsigned long intervalMs, bool userInput);
+  void declareInput(const char* scope, const char* variable, const char* inputType);
   void sendBool(const char* scope, const char* variable, bool value);
+  void ensureBool(const char* scope, const char* variable, bool value);
   void sendInt(const char* scope, const char* variable, int value);
   void sendFloat(const char* scope, const char* variable, float value);
   void sendString(const char* scope, const char* variable, const char* value);

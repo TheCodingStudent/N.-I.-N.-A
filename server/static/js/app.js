@@ -2,12 +2,8 @@ const connection = document.querySelector('#connection');
 const clientIdentity = document.querySelector('#client-identity');
 const scopeRoot = document.querySelector('#scope-root');
 
-const controllableVariables = new Set([
-  'global.active',
-  'devices.esp32_demo.active'
-]);
-
 let scopes = {};
+let ui = { controls: {} };
 let socket;
 let reconnectTimer;
 let actionsEnabled = false;
@@ -60,6 +56,10 @@ if (clientIdentity) {
 
 function fullName(scope, variable) {
   return `${scope}.${variable}`;
+}
+
+function getControl(scope, variable) {
+  return ui?.controls?.[fullName(scope, variable)] ?? null;
 }
 
 function boolLabel(value) {
@@ -177,7 +177,9 @@ function createVariableRow(scopeName, variable, value) {
   copy.appendChild(createElement('p', { text: valueLabel(value) }));
   row.appendChild(copy);
 
-  if (typeof value === 'boolean' && controllableVariables.has(fullName(scopeName, variable))) {
+  const control = getControl(scopeName, variable);
+
+  if (typeof value === 'boolean' && control?.type === 'toggle') {
     const button = createElement('button', {
       text: value ? 'Apagar' : 'Encender',
       attributes: {
@@ -258,8 +260,9 @@ function createGroupFrame(group, openGroups, index) {
   return frame;
 }
 
-function renderState(nextScopes) {
+function renderState(nextScopes, nextUi = { controls: {} }) {
   scopes = { ...nextScopes };
+  ui = nextUi && typeof nextUi === 'object' ? nextUi : { controls: {} };
 
   const openGroups = rememberedOpenGroups();
   const groups = groupedScopes(scopes);
@@ -315,7 +318,7 @@ function connect() {
   socket.addEventListener('message', ({ data }) => {
     const message = JSON.parse(data);
     if (message.type === 'state') {
-      renderState(message.scopes);
+      renderState(message.scopes, message.ui);
       connection.textContent = 'Servidor conectado';
       setActionsEnabled(true);
     }

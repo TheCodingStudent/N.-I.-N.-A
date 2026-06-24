@@ -20,7 +20,7 @@ void setup() {
   pinMode(ACTIVE_PIN, OUTPUT);
   digitalWrite(ACTIVE_PIN, LOW);
 
-  nina.listenBool("active", applyActiveState);
+  nina.listenBool("active", applyActiveState, true);
   nina.begin(WIFI_SSID, WIFI_PASSWORD, SERVER_HOST);
 }
 
