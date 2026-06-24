@@ -148,6 +148,10 @@ function createElement(tagName, options = {}) {
   return element;
 }
 
+function canDeleteSection(section) {
+  return section.scope?.startsWith('devices.') && Boolean(section.name);
+}
+
 function createIndicator(value) {
   return createElement('div', {
     className: `indicator ${value ? 'active' : ''}`,
@@ -213,7 +217,25 @@ function createSection(section) {
   const sectionElement = createElement('section', { className: 'scope-section' });
 
   if (section.name) {
-    sectionElement.appendChild(createElement('h3', { text: section.name }));
+    const sectionHeader = createElement('div', { className: 'scope-section-header' });
+    sectionHeader.appendChild(createElement('h3', { text: section.name }));
+
+    if (canDeleteSection(section)) {
+      const deleteButton = createElement('button', {
+        className: 'danger-button',
+        text: 'Borrar',
+        attributes: {
+          type: 'button',
+          'data-action': 'delete-device',
+          'data-device-id': section.name
+        }
+      });
+
+      deleteButton.disabled = !actionsEnabled;
+      sectionHeader.appendChild(deleteButton);
+    }
+
+    sectionElement.appendChild(sectionHeader);
   }
 
   const list = createElement('div', { className: 'state-list' });
@@ -292,6 +314,15 @@ function sendVariable(scope, variable, value) {
   }));
 }
 
+function deleteDevice(deviceId) {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+
+  socket.send(JSON.stringify({
+    type: 'delete_device',
+    device_id: deviceId
+  }));
+}
+
 function registerClient() {
   socket.send(JSON.stringify({
     type: 'register_client',
@@ -334,6 +365,18 @@ function connect() {
 }
 
 scopeRoot.addEventListener('click', (event) => {
+  const deleteButton = event.target.closest('[data-action="delete-device"]');
+  if (deleteButton) {
+    const deviceId = deleteButton.dataset.deviceId;
+    const confirmed = window.confirm(`¿Borrar el dispositivo "${deviceId}" del servidor?`);
+
+    if (confirmed) {
+      deleteDevice(deviceId);
+    }
+
+    return;
+  }
+
   const button = event.target.closest('[data-action="toggle"]');
   if (!button) return;
 

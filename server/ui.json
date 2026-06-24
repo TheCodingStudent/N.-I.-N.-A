@@ -1,7 +1,3 @@
 {
-  "controls": {
-    "devices.esp32_demo.active": {
-      "type": "toggle"
-    }
-  }
+  "controls": {}
 }

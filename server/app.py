@@ -12,11 +12,13 @@ from flask import Flask, render_template
 from flask_sock import Sock
 
 
-app = Flask(__name__)
-sock = Sock(app)
-
 STATE_FILE = Path(__file__).with_name("state.json")
 UI_FILE = Path(__file__).with_name("ui.json")
+
+VALID_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+VALID_VALUE_TYPES = (bool, int, float, str, type(None))
+INPUT_TYPES = {"toggle", "number", "text"}
+
 DEFAULT_STATE = {
     "scopes": {
         "global": {},
@@ -31,79 +33,119 @@ DEFAULT_STATE = {
         "devices": {},
     }
 }
+
 DEFAULT_UI = {
     "controls": {}
 }
-
-VALID_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-VALID_VALUE_TYPES = (bool, int, float, str, type(None))
-
-state_lock = Lock()
-ui_lock = Lock()
-clients_lock = Lock()
-state = None
-ui = None
-clients = set()
-connection_scopes = {}
 
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def write_json(path, data):
-    temporary_file = path.with_suffix(f"{path.suffix}.tmp")
-    temporary_file.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    temporary_file.replace(path)
+class JsonStore:
+    """Reads and writes one JSON file."""
+
+    def __init__(self, path, default_data):
+        self.path = path
+        self.default_data = default_data
+
+    def load(self):
+        if not self.path.exists():
+            data = copy.deepcopy(self.default_data)
+            self.save(data)
+            return data
+
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def save(self, data):
+        temporary_file = self.path.with_suffix(f"{self.path.suffix}.tmp")
+        temporary_file.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary_file.replace(self.path)
 
 
-def write_state(next_state):
-    write_json(STATE_FILE, next_state)
+class Validator:
+    """Keeps the naming and value rules in one place."""
+
+    @staticmethod
+    def valid_scope(scope):
+        if not isinstance(scope, str):
+            return False
+        if scope in {"global", "server"}:
+            return True
+
+        parts = scope.split(".")
+        if len(parts) != 2:
+            return False
+
+        group, item_id = parts
+        return group in {"clients", "devices"} and bool(VALID_NAME.match(item_id))
+
+    @staticmethod
+    def valid_variable(variable):
+        return isinstance(variable, str) and bool(VALID_NAME.match(variable))
+
+    @staticmethod
+    def valid_value(value):
+        return isinstance(value, VALID_VALUE_TYPES)
 
 
-def save_state():
-    write_state(state)
+class StateManager:
+    """Owns state.json and all scope/value mutations."""
 
+    def __init__(self, store):
+        self.store = store
+        self.lock = Lock()
+        self.state = self._load()
 
-def write_ui(next_ui):
-    write_json(UI_FILE, next_ui)
+    def _load(self):
+        loaded_state = self.store.load()
+        migrated_state = self._migrate(loaded_state)
+        changed = migrated_state != loaded_state
+        changed = self._ensure_defaults(migrated_state) or changed
 
+        server_scope = migrated_state["scopes"]["server"]
+        server_scope["online"] = True
+        server_scope["hostname"] = socket.gethostname()
+        server_scope["platform"] = platform.system()
+        server_scope["started_at"] = now_iso()
+        server_scope["stopped_at"] = None
+        changed = True
 
-def save_ui():
-    write_ui(ui)
+        if changed:
+            self.store.save(migrated_state)
 
+        return migrated_state
 
-def migrate_state(loaded_state):
-    if "scopes" in loaded_state:
-        return loaded_state
+    def _migrate(self, loaded_state):
+        if isinstance(loaded_state, dict) and "scopes" in loaded_state:
+            return loaded_state
 
-    old_values = loaded_state.get("values", {})
-    migrated_state = copy.deepcopy(DEFAULT_STATE)
-    migrated_state["scopes"]["global"].update(old_values)
-    return migrated_state
+        old_values = {}
+        if isinstance(loaded_state, dict):
+            old_values = loaded_state.get("values", {})
 
+        migrated_state = copy.deepcopy(DEFAULT_STATE)
+        if isinstance(old_values, dict):
+            migrated_state["scopes"]["global"].update(old_values)
+        return migrated_state
 
-def ensure_mapping(parent, name):
-    if name not in parent or not isinstance(parent[name], dict):
-        parent[name] = {}
-        return True
-    return False
+    def _ensure_defaults(self, loaded_state):
+        changed = False
+        scopes = loaded_state.setdefault("scopes", {})
 
+        for scope_name, default_value in DEFAULT_STATE["scopes"].items():
+            if scope_name not in scopes:
+                scopes[scope_name] = copy.deepcopy(default_value)
+                changed = True
+                continue
 
-def ensure_defaults(loaded_state):
-    changed = False
-    scopes = loaded_state.setdefault("scopes", {})
+            if not isinstance(default_value, dict):
+                continue
 
-    for scope_name, default_value in DEFAULT_STATE["scopes"].items():
-        if scope_name not in scopes:
-            scopes[scope_name] = copy.deepcopy(default_value)
-            changed = True
-            continue
-
-        if isinstance(default_value, dict):
             if not isinstance(scopes[scope_name], dict):
                 scopes[scope_name] = copy.deepcopy(default_value)
                 changed = True
@@ -114,57 +156,422 @@ def ensure_defaults(loaded_state):
                     scopes[scope_name][name] = copy.deepcopy(value)
                     changed = True
 
-    changed = ensure_mapping(scopes, "clients") or changed
-    changed = ensure_mapping(scopes, "devices") or changed
-    return changed
+        changed = self._ensure_mapping(scopes, "clients") or changed
+        changed = self._ensure_mapping(scopes, "devices") or changed
+        return changed
+
+    @staticmethod
+    def _ensure_mapping(parent, name):
+        if name not in parent or not isinstance(parent[name], dict):
+            parent[name] = {}
+            return True
+        return False
+
+    def snapshot(self):
+        with self.lock:
+            return {"scopes": copy.deepcopy(self.state["scopes"])}
+
+    def _scope_values(self, scope, create=False):
+        if scope in {"global", "server"}:
+            return self.state["scopes"][scope]
+
+        group, item_id = scope.split(".")
+        group_values = self.state["scopes"].setdefault(group, {})
+
+        if create:
+            return group_values.setdefault(item_id, {})
+
+        return group_values.get(item_id)
+
+    def update_scope(self, scope, updates):
+        if not Validator.valid_scope(scope) or not isinstance(updates, dict):
+            return False
+
+        clean_updates = {}
+        for name, value in updates.items():
+            if not Validator.valid_variable(name):
+                continue
+            if not Validator.valid_value(value):
+                continue
+            clean_updates[name] = value
+
+        if not clean_updates:
+            return False
+
+        with self.lock:
+            scope_values = self._scope_values(scope, create=True)
+            changed = False
+
+            for name, value in clean_updates.items():
+                if scope_values.get(name) == value:
+                    continue
+                scope_values[name] = value
+                changed = True
+
+            if not changed:
+                return False
+
+            self.store.save(self.state)
+            return True
+
+    def set_variable(self, scope, variable, value):
+        return self.update_scope(scope, {variable: value})
+
+    def ensure_variable(self, scope, variable, value):
+        if not Validator.valid_scope(scope) or not Validator.valid_variable(variable):
+            return False
+        if not Validator.valid_value(value):
+            return False
+
+        with self.lock:
+            scope_values = self._scope_values(scope, create=True)
+
+            if variable in scope_values:
+                return False
+
+            scope_values[variable] = value
+            self.store.save(self.state)
+            return True
+
+    def delete_device(self, device_id):
+        if not isinstance(device_id, str) or not VALID_NAME.match(device_id):
+            return False
+
+        with self.lock:
+            devices = self.state["scopes"].setdefault("devices", {})
+
+            if device_id not in devices:
+                return False
+
+            del devices[device_id]
+            self.store.save(self.state)
+            return True
+
+    def register_client(self, message):
+        client_id = message.get("client_id")
+        client_type = message.get("client_type")
+
+        if not isinstance(client_id, str) or not VALID_NAME.match(client_id):
+            return None
+        if not isinstance(client_type, str) or not VALID_NAME.match(client_type):
+            client_type = "unknown"
+
+        client_scope = f"clients.{client_id}"
+        self.update_scope(
+            client_scope,
+            {
+                "type": client_type,
+                "online": True,
+                "last_seen": now_iso(),
+                "user_agent": str(message.get("user_agent") or "")[:300],
+            },
+        )
+        return client_scope
+
+    def register_device(self, message):
+        device_id = message.get("device_id")
+        device_type = message.get("device_type")
+        device_name = message.get("name")
+
+        if not isinstance(device_id, str) or not VALID_NAME.match(device_id):
+            return None
+        if not isinstance(device_type, str) or not VALID_NAME.match(device_type):
+            device_type = "simulator"
+
+        device_scope = f"devices.{device_id}"
+        updates = {
+            "type": device_type,
+            "online": True,
+            "last_seen": now_iso(),
+        }
+
+        if isinstance(device_name, str) and device_name.strip():
+            updates["name"] = device_name.strip()[:80]
+
+        self.update_scope(device_scope, updates)
+        return device_scope
+
+    def mark_offline(self, scope):
+        return self.update_scope(
+            scope,
+            {
+                "online": False,
+                "last_seen": now_iso(),
+            },
+        )
+
+    def mark_server_offline(self):
+        with self.lock:
+            server_scope = self.state["scopes"]["server"]
+            server_scope["online"] = False
+            server_scope["stopped_at"] = now_iso()
+            self.store.save(self.state)
 
 
-def load_state():
-    if not STATE_FILE.exists():
-        loaded_state = copy.deepcopy(DEFAULT_STATE)
-        loaded_state["scopes"]["server"]["started_at"] = now_iso()
-        write_state(loaded_state)
-        return loaded_state
+class UiManager:
+    """Owns ui.json and control declarations."""
 
-    loaded_state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    migrated_state = migrate_state(loaded_state)
-    changed = migrated_state != loaded_state
-    changed = ensure_defaults(migrated_state) or changed
+    def __init__(self, store):
+        self.store = store
+        self.lock = Lock()
+        self.ui = self._load()
 
-    server_scope = migrated_state["scopes"]["server"]
-    server_scope["online"] = True
-    server_scope["hostname"] = socket.gethostname()
-    server_scope["platform"] = platform.system()
-    server_scope["started_at"] = now_iso()
-    server_scope["stopped_at"] = None
-    changed = True
+    def _load(self):
+        loaded_ui = self.store.load()
 
-    if changed:
-        write_state(migrated_state)
+        if not isinstance(loaded_ui, dict):
+            loaded_ui = copy.deepcopy(DEFAULT_UI)
 
-    return migrated_state
+        if "controls" not in loaded_ui or not isinstance(loaded_ui["controls"], dict):
+            loaded_ui["controls"] = {}
+            self.store.save(loaded_ui)
 
-
-def load_ui():
-    if not UI_FILE.exists():
-        loaded_ui = copy.deepcopy(DEFAULT_UI)
-        write_ui(loaded_ui)
         return loaded_ui
 
-    loaded_ui = json.loads(UI_FILE.read_text(encoding="utf-8"))
+    def snapshot(self):
+        with self.lock:
+            return copy.deepcopy(self.ui)
 
-    if not isinstance(loaded_ui, dict):
-        loaded_ui = copy.deepcopy(DEFAULT_UI)
+    def declare_input(self, scope, variable, input_type):
+        if not Validator.valid_scope(scope) or not Validator.valid_variable(variable):
+            return False
+        if input_type not in INPUT_TYPES:
+            return False
 
-    if "controls" not in loaded_ui or not isinstance(loaded_ui["controls"], dict):
-        loaded_ui["controls"] = {}
-        write_ui(loaded_ui)
+        control_key = f"{scope}.{variable}"
+        next_control = {"type": input_type}
 
-    return loaded_ui
+        with self.lock:
+            controls = self.ui.setdefault("controls", {})
+
+            if controls.get(control_key) == next_control:
+                return False
+
+            controls[control_key] = next_control
+            self.store.save(self.ui)
+            return True
+
+    def delete_scope_controls(self, scope):
+        if not Validator.valid_scope(scope):
+            return False
+
+        prefix = f"{scope}."
+
+        with self.lock:
+            controls = self.ui.setdefault("controls", {})
+            removable_keys = [
+                key for key in controls
+                if key.startswith(prefix)
+            ]
+
+            if not removable_keys:
+                return False
+
+            for key in removable_keys:
+                del controls[key]
+
+            self.store.save(self.ui)
+            return True
 
 
-state = load_state()
-ui = load_ui()
+class ConnectionManager:
+    """Tracks WebSocket clients and the scope attached to each connection."""
+
+    def __init__(self):
+        self.lock = Lock()
+        self.clients = set()
+        self.scopes = {}
+
+    def add(self, client):
+        with self.lock:
+            self.clients.add(client)
+
+    def remove(self, client):
+        with self.lock:
+            self.clients.discard(client)
+            return self.scopes.pop(client, None)
+
+    def bind_scope(self, client, scope):
+        with self.lock:
+            self.scopes[client] = scope
+
+    def unbind_scope(self, scope):
+        with self.lock:
+            removable_clients = [
+                client for client, client_scope in self.scopes.items()
+                if client_scope == scope
+            ]
+
+            for client in removable_clients:
+                self.scopes.pop(client, None)
+
+    def broadcast(self, message):
+        with self.lock:
+            recipients = list(self.clients)
+
+        disconnected = set()
+        for client in recipients:
+            try:
+                client.send(json.dumps(message))
+            except Exception:
+                disconnected.add(client)
+
+        if disconnected:
+            with self.lock:
+                self.clients.difference_update(disconnected)
+                for client in disconnected:
+                    self.scopes.pop(client, None)
+
+
+class NinaServer:
+    """Coordinates state, UI metadata and WebSocket messages."""
+
+    def __init__(self, state, ui, connections):
+        self.state = state
+        self.ui = ui
+        self.connections = connections
+
+    def state_message(self):
+        return {
+            "type": "state",
+            **self.state.snapshot(),
+            "ui": self.ui.snapshot(),
+        }
+
+    def broadcast_state(self):
+        self.connections.broadcast(self.state_message())
+
+    def handle_client(self, client):
+        self.connections.add(client)
+        client.send(json.dumps(self.state_message()))
+
+        try:
+            while True:
+                raw_message = client.receive()
+                if raw_message is None:
+                    break
+
+                message = self._decode_message(raw_message)
+                if message is None:
+                    continue
+
+                self.handle_message(client, message)
+        finally:
+            connection_scope = self.connections.remove(client)
+            if connection_scope and self.state.mark_offline(connection_scope):
+                self.broadcast_state()
+
+    @staticmethod
+    def _decode_message(raw_message):
+        try:
+            message = json.loads(raw_message)
+        except (TypeError, json.JSONDecodeError):
+            return None
+
+        if not isinstance(message, dict):
+            return None
+
+        return message
+
+    def handle_message(self, client, message):
+        message_type = message.get("type")
+
+        if message_type == "register_client":
+            scope = self.state.register_client(message)
+            if scope:
+                self.connections.bind_scope(client, scope)
+                self.broadcast_state()
+            return
+
+        if message_type == "register_device":
+            scope = self.state.register_device(message)
+            if scope:
+                self.connections.bind_scope(client, scope)
+                self.broadcast_state()
+            return
+
+        if message_type == "ensure_variable":
+            self._handle_ensure_variable(message)
+            return
+
+        if message_type == "declare_input":
+            self._handle_declare_input(message)
+            return
+
+        if message_type == "delete_device":
+            self._handle_delete_device(message)
+            return
+
+        if message_type == "set_variable":
+            self._handle_set_variable(message)
+
+    def _safe_scope_variable(self, message):
+        scope = message.get("scope")
+        variable = message.get("variable")
+
+        if not Validator.valid_scope(scope):
+            return None, None
+        if scope == "server":
+            return None, None
+        if not Validator.valid_variable(variable):
+            return None, None
+
+        return scope, variable
+
+    def _handle_ensure_variable(self, message):
+        scope, variable = self._safe_scope_variable(message)
+        if scope is None:
+            return
+
+        if self.state.ensure_variable(scope, variable, message.get("value")):
+            self.broadcast_state()
+
+    def _handle_declare_input(self, message):
+        scope, variable = self._safe_scope_variable(message)
+        if scope is None:
+            return
+
+        input_type = message.get("input_type") or message.get("input")
+        if not isinstance(input_type, str):
+            return
+
+        if self.ui.declare_input(scope, variable, input_type):
+            self.broadcast_state()
+
+    def _handle_set_variable(self, message):
+        scope, variable = self._safe_scope_variable(message)
+        if scope is None:
+            return
+
+        if self.state.set_variable(scope, variable, message.get("value")):
+            self.broadcast_state()
+
+    def _handle_delete_device(self, message):
+        device_id = message.get("device_id")
+
+        if not isinstance(device_id, str) or not VALID_NAME.match(device_id):
+            return
+
+        device_scope = f"devices.{device_id}"
+        state_changed = self.state.delete_device(device_id)
+        ui_changed = self.ui.delete_scope_controls(device_scope)
+        self.connections.unbind_scope(device_scope)
+
+        if state_changed or ui_changed:
+            self.broadcast_state()
+
+
+app = Flask(__name__)
+sock = Sock(app)
+
+state_store =   JsonStore(STATE_FILE, DEFAULT_STATE)
+ui_store =      JsonStore(UI_FILE, DEFAULT_UI)
+state_manager = StateManager(state_store)
+ui_manager =    UiManager(ui_store)
+connections =   ConnectionManager()
+nina =          NinaServer(state_manager, ui_manager, connections)
+
+atexit.register(state_manager.mark_server_offline)
 
 
 @app.after_request
@@ -177,232 +584,6 @@ def disable_browser_cache(response):
     return response
 
 
-def current_state():
-    with state_lock:
-        return {"scopes": copy.deepcopy(state["scopes"])}
-
-
-def current_ui():
-    with ui_lock:
-        return copy.deepcopy(ui)
-
-
-def state_message():
-    return {"type": "state", **current_state(), "ui": current_ui()}
-
-
-def send_json(client, message):
-    client.send(json.dumps(message))
-
-
-def broadcast(message):
-    with clients_lock:
-        recipients = list(clients)
-
-    disconnected = set()
-    for client in recipients:
-        try:
-            send_json(client, message)
-        except Exception:
-            disconnected.add(client)
-
-    if disconnected:
-        with clients_lock:
-            clients.difference_update(disconnected)
-            for client in disconnected:
-                connection_scopes.pop(client, None)
-
-
-def valid_scope(scope):
-    if scope in {"global", "server"}:
-        return True
-
-    parts = scope.split(".")
-    if len(parts) != 2:
-        return False
-
-    group, item_id = parts
-    return group in {"clients", "devices"} and bool(VALID_NAME.match(item_id))
-
-
-def valid_variable(variable):
-    return bool(VALID_NAME.match(variable))
-
-
-def get_scope_values(scope, create=False):
-    if scope in {"global", "server"}:
-        return state["scopes"][scope]
-
-    group, item_id = scope.split(".")
-    group_values = state["scopes"].setdefault(group, {})
-
-    if create:
-        return group_values.setdefault(item_id, {})
-
-    return group_values.get(item_id)
-
-
-def update_scope(scope, updates):
-    if not valid_scope(scope):
-        return False
-
-    clean_updates = {}
-    for name, value in updates.items():
-        if not valid_variable(name):
-            continue
-        if not isinstance(value, VALID_VALUE_TYPES):
-            continue
-        clean_updates[name] = value
-
-    if not clean_updates:
-        return False
-
-    with state_lock:
-        scope_values = get_scope_values(scope, create=True)
-        changed = False
-
-        for name, value in clean_updates.items():
-            if scope_values.get(name) == value:
-                continue
-            scope_values[name] = value
-            changed = True
-
-        if not changed:
-            return False
-
-        save_state()
-
-    broadcast(state_message())
-    return True
-
-
-def set_variable(scope, name, value):
-    return update_scope(scope, {name: value})
-
-
-def ensure_variable(scope, name, value):
-    if not valid_scope(scope) or not valid_variable(name):
-        return False
-    if not isinstance(value, VALID_VALUE_TYPES):
-        return False
-
-    with state_lock:
-        scope_values = get_scope_values(scope, create=True)
-
-        if name in scope_values:
-            return False
-
-        scope_values[name] = value
-        save_state()
-
-    broadcast(state_message())
-    return True
-
-
-def declare_input(scope, name, input_type):
-    if not valid_scope(scope) or not valid_variable(name):
-        return False
-    if input_type not in {"toggle", "number", "text"}:
-        return False
-
-    control_key = f"{scope}.{name}"
-    next_control = {"type": input_type}
-
-    with ui_lock:
-        controls = ui.setdefault("controls", {})
-
-        if controls.get(control_key) == next_control:
-            return False
-
-        controls[control_key] = next_control
-        save_ui()
-
-    broadcast(state_message())
-    return True
-
-
-def register_client(client, message):
-    client_id = message.get("client_id")
-    client_type = message.get("client_type")
-
-    if not isinstance(client_id, str) or not VALID_NAME.match(client_id):
-        return None
-    if not isinstance(client_type, str) or not VALID_NAME.match(client_type):
-        client_type = "unknown"
-
-    client_scope = f"clients.{client_id}"
-
-    with clients_lock:
-        connection_scopes[client] = client_scope
-
-    update_scope(
-        client_scope,
-        {
-            "type": client_type,
-            "online": True,
-            "last_seen": now_iso(),
-            "user_agent": str(message.get("user_agent") or "")[:300],
-        },
-    )
-    return client_scope
-
-
-def register_device(client, message):
-    device_id = message.get("device_id")
-    device_type = message.get("device_type")
-    device_name = message.get("name")
-
-    if not isinstance(device_id, str) or not VALID_NAME.match(device_id):
-        return None
-    if not isinstance(device_type, str) or not VALID_NAME.match(device_type):
-        device_type = "simulator"
-
-    device_scope = f"devices.{device_id}"
-
-    with clients_lock:
-        connection_scopes[client] = device_scope
-
-    updates = {
-        "type": device_type,
-        "online": True,
-        "last_seen": now_iso(),
-    }
-
-    if isinstance(device_name, str) and device_name.strip():
-        updates["name"] = device_name.strip()[:80]
-
-    update_scope(device_scope, updates)
-    return device_scope
-
-
-def mark_connection_offline(client):
-    with clients_lock:
-        connection_scope = connection_scopes.pop(client, None)
-
-    if connection_scope:
-        update_scope(
-            connection_scope,
-            {
-                "online": False,
-                "last_seen": now_iso(),
-            },
-        )
-
-
-def mark_server_offline():
-    if state is None:
-        return
-
-    with state_lock:
-        server_scope = state["scopes"]["server"]
-        server_scope["online"] = False
-        server_scope["stopped_at"] = now_iso()
-        save_state()
-
-
-atexit.register(mark_server_offline)
-
-
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -410,84 +591,7 @@ def index():
 
 @sock.route("/ws")
 def websocket(client):
-    with clients_lock:
-        clients.add(client)
-
-    # Una conexión nueva necesita conocer el estado completo actual.
-    send_json(client, state_message())
-
-    try:
-        while True:
-            raw_message = client.receive()
-            if raw_message is None:
-                break
-
-            try:
-                message = json.loads(raw_message)
-            except (TypeError, json.JSONDecodeError):
-                continue
-
-            if message.get("type") == "register_client":
-                register_client(client, message)
-                continue
-
-            if message.get("type") == "register_device":
-                register_device(client, message)
-                continue
-
-            if message.get("type") == "ensure_variable":
-                if not isinstance(message.get("scope"), str):
-                    continue
-                if not isinstance(message.get("variable"), str):
-                    continue
-                if message["scope"] == "server":
-                    continue
-
-                ensure_variable(
-                    message["scope"],
-                    message["variable"],
-                    message.get("value"),
-                )
-                continue
-
-            if message.get("type") == "declare_input":
-                if not isinstance(message.get("scope"), str):
-                    continue
-                if not isinstance(message.get("variable"), str):
-                    continue
-                if message["scope"] == "server":
-                    continue
-
-                input_type = message.get("input_type") or message.get("input")
-                if not isinstance(input_type, str):
-                    continue
-
-                declare_input(
-                    message["scope"],
-                    message["variable"],
-                    input_type,
-                )
-                continue
-
-            if message.get("type") != "set_variable":
-                continue
-            if not isinstance(message.get("scope"), str):
-                continue
-            if not isinstance(message.get("variable"), str):
-                continue
-            if message["scope"] == "server":
-                continue
-
-            # No se transmite nada si el valor ya era el solicitado.
-            set_variable(
-                message["scope"],
-                message["variable"],
-                message.get("value"),
-            )
-    finally:
-        with clients_lock:
-            clients.discard(client)
-        mark_connection_offline(client)
+    nina.handle_client(client)
 
 
 if __name__ == "__main__":

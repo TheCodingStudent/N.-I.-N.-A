@@ -294,14 +294,24 @@ body::before {
   border-top: 1px solid rgba(246, 254, 255, 0.18);
 }
 
+.scope-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 2px;
+}
+
 .scope-section h3 {
   margin: 0;
-  padding: 4px 4px 2px;
+  overflow: hidden;
   color: var(--white);
   font-size: 0.68rem;
   font-weight: 900;
   letter-spacing: 0.12em;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .state-list {
@@ -393,6 +403,21 @@ button {
 button:disabled {
   opacity: 0.42;
   cursor: wait;
+}
+
+.danger-button {
+  min-width: auto;
+  padding: 4px 7px;
+  border-color: rgba(255, 255, 255, 0.42);
+  color: rgba(246, 254, 255, 0.84);
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 0.56rem;
+}
+
+.danger-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.85);
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.13);
 }
 
 .dock-panel {
