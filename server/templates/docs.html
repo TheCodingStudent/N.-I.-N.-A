@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>N. I. N. A Docs</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='29') }}">
+</head>
+<body>
+  <div class="hud-noise" aria-hidden="true"></div>
+  <div id="navbar-root"></div>
+
+  <main class="hud-shell docs-page">
+    <section class="terminal-panel">
+      <article class="docs-content">
+        {{ readme_html }}
+      </article>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/navbar.js', v='7') }}"></script>
+</body>
+</html>

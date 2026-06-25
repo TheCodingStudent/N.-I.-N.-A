@@ -9,6 +9,16 @@
       "enabled": true,
       "updated_at": "2026-06-24T17:20:46.667528+00:00",
       "created_at": "2026-06-24T17:13:48.700619+00:00"
+    },
+    {
+      "id": "green_11bd32",
+      "title": "green",
+      "html": "<div class=\"nina-card\">\n  <h2>Mi herramienta</h2>\n  <p>Selecciona una variable del sidebar.</p>\n</div>",
+      "css": ".nina-card {\n  padding: 14px;\n  border: 1px solid rgba(255,255,255,.55);\n  border-radius: 10px;\n  background: rgba(0,255,0,.08);\n}",
+      "js": "// tool = contenedor de esta herramienta\n// NINA.get(path), NINA.set(path, value), NINA.toggle(path), NINA.on(path, callback)\n",
+      "enabled": true,
+      "updated_at": "2026-06-25T15:18:19.933647+00:00",
+      "created_at": "2026-06-25T15:18:19.933707+00:00"
     }
   ]
 }

@@ -1,17 +1,14 @@
 ﻿const toolList = document.querySelector('#tool-list');
 const variableList = document.querySelector('#variable-list');
 const runtimeRoot = document.querySelector('#tools-runtime');
-const connection = document.querySelector('#tools-connection');
 const titleInput = document.querySelector('#tool-title');
 const saveButton = document.querySelector('#save-tool');
-const deleteButton = document.querySelector('#delete-tool');
+const exportButton = document.querySelector('#export-tool');
 const newButton = document.querySelector('#new-tool');
-const editorTabButton = document.querySelector('#show-editor-tab');
-const toolSelect = document.querySelector('#tool-tab-select');
+const codePanel = document.querySelector('.code-panel');
 const editorWorkspace = document.querySelector('#editor-workspace');
 const toolWorkspace = document.querySelector('#tool-workspace');
 const activeToolTitle = document.querySelector('#active-tool-title');
-const backToEditorButton = document.querySelector('#back-to-editor');
 const tabButtons = document.querySelectorAll('[data-code-tab]');
 const editors = {
   html: document.querySelector('#code-html'),
@@ -25,7 +22,7 @@ let scopes = {};
 let tools = [];
 let selectedToolId = null;
 let runtimeToolId = null;
-let pendingOpenToolId = null;
+let initialRuntimeToolId = new URLSearchParams(location.search).get('tool');
 let activeTab = 'html';
 let actionsEnabled = false;
 
@@ -161,7 +158,6 @@ function setEditorValue(tool) {
   editors.html.value = tool?.html || defaultHtml();
   editors.css.value = tool?.css || defaultCss();
   editors.js.value = tool?.js || defaultJs();
-  deleteButton.disabled = !tool || !actionsEnabled;
 }
 
 function defaultHtml() {
@@ -188,6 +184,10 @@ function renderToolList() {
   }
 
   tools.forEach((tool) => {
+    const row = createElement('article', {
+      className: `tool-list-row ${tool.id === selectedToolId ? 'active' : ''}`
+    });
+
     const button = createElement('button', {
       className: `tool-list-item ${tool.id === selectedToolId ? 'active' : ''}`,
       text: tool.title || tool.id,
@@ -196,31 +196,22 @@ function renderToolList() {
         'data-tool-id': tool.id
       }
     });
-    toolList.appendChild(button);
+
+    const deleteButton = createElement('button', {
+      className: 'tool-delete-button danger-button',
+      text: '-',
+      attributes: {
+        type: 'button',
+        title: `Borrar ${tool.title || tool.id}`,
+        'aria-label': `Borrar ${tool.title || tool.id}`,
+        'data-delete-tool-id': tool.id
+      }
+    });
+
+    row.appendChild(button);
+    row.appendChild(deleteButton);
+    toolList.appendChild(row);
   });
-}
-
-function renderToolSelect() {
-  const currentValue = runtimeToolId || '';
-  toolSelect.innerHTML = '';
-
-  toolSelect.appendChild(createElement('option', {
-    text: 'Escoger herramienta...',
-    attributes: { value: '' }
-  }));
-
-  tools.forEach((tool) => {
-    toolSelect.appendChild(createElement('option', {
-      text: tool.title || tool.id,
-      attributes: { value: tool.id }
-    }));
-  });
-
-  if (tools.some((tool) => tool.id === currentValue)) {
-    toolSelect.value = currentValue;
-  } else {
-    toolSelect.value = '';
-  }
 }
 
 function renderVariableList() {
@@ -328,17 +319,21 @@ function createNinaApi() {
 function showEditor() {
   editorWorkspace.classList.add('active');
   toolWorkspace.classList.remove('active');
-  editorTabButton.classList.add('active');
-  toolSelect.value = runtimeToolId || '';
+  if (location.search) {
+    history.replaceState(null, '', '/tools');
+  }
 }
 
 function showTool(toolId) {
   runtimeToolId = toolId;
   editorWorkspace.classList.remove('active');
   toolWorkspace.classList.add('active');
-  editorTabButton.classList.remove('active');
-  renderToolSelect();
   renderRuntime();
+
+  const nextUrl = `/tools?tool=${encodeURIComponent(toolId)}`;
+  if (`${location.pathname}${location.search}` !== nextUrl) {
+    history.replaceState(null, '', nextUrl);
+  }
 }
 
 function renderAll() {
@@ -352,8 +347,13 @@ function renderAll() {
     showEditor();
   }
 
+  if (initialRuntimeToolId && tools.some((tool) => tool.id === initialRuntimeToolId)) {
+    runtimeToolId = initialRuntimeToolId;
+    initialRuntimeToolId = null;
+    showTool(runtimeToolId);
+  }
+
   renderToolList();
-  renderToolSelect();
   renderVariableList();
   renderRuntime();
 }
@@ -361,9 +361,7 @@ function renderAll() {
 function setActionsEnabled(enabled) {
   actionsEnabled = enabled;
   saveButton.disabled = !enabled;
-  deleteButton.disabled = !enabled || !selectedToolId;
   newButton.disabled = !enabled;
-  toolSelect.disabled = !enabled;
 }
 
 function saveCurrentTool() {
@@ -372,8 +370,6 @@ function saveCurrentTool() {
   if (!selectedToolId) {
     selectedToolId = createToolId(titleInput.value);
   }
-
-  pendingOpenToolId = selectedToolId;
 
   socket.send(JSON.stringify({
     type: 'save_tool',
@@ -384,6 +380,57 @@ function saveCurrentTool() {
     js: editors.js.value,
     enabled: true
   }));
+}
+
+function exportCurrentTool() {
+  const title = titleInput.value.trim() || selectedTool()?.title || 'NINA Tool';
+  const fileName = `${createExportFileName(title)}.html`;
+  const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+${editors.css.value}
+  </style>
+</head>
+<body>
+${editors.html.value}
+  <script>
+${editors.js.value}
+  <\/script>
+</body>
+</html>
+`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function createExportFileName(title) {
+  return String(title || 'nina_tool')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48) || 'nina_tool';
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function createToolId(title) {
@@ -399,8 +446,8 @@ function createToolId(title) {
   return `${safeBase || 'tool'}_${random}`;
 }
 
-function deleteCurrentTool() {
-  const tool = selectedTool();
+function deleteToolById(toolId) {
+  const tool = tools.find((candidate) => candidate.id === toolId);
   if (!tool || socket?.readyState !== WebSocket.OPEN) return;
 
   if (!window.confirm(`¿Borrar la herramienta "${tool.title}"?`)) return;
@@ -446,6 +493,7 @@ function insertToggleSnippet(path) {
 
 function switchTab(tabName) {
   activeTab = tabName;
+  codePanel.dataset.activeCode = tabName;
 
   tabButtons.forEach((button) => {
     button.classList.toggle('active', button.dataset.codeTab === tabName);
@@ -471,11 +519,9 @@ function connect() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   socket = new WebSocket(`${protocol}://${location.host}/ws`);
 
-  connection.textContent = 'Conectando...';
   setActionsEnabled(false);
 
   socket.addEventListener('open', () => {
-    connection.textContent = 'Sincronizando...';
     registerClient();
   });
 
@@ -492,19 +538,11 @@ function connect() {
       setEditorValue(selectedTool());
     }
 
-    if (pendingOpenToolId && tools.some((tool) => tool.id === pendingOpenToolId)) {
-      runtimeToolId = pendingOpenToolId;
-      pendingOpenToolId = null;
-      showTool(runtimeToolId);
-    }
-
-    connection.textContent = 'Conectado';
     setActionsEnabled(true);
     renderAll();
   });
 
   socket.addEventListener('close', () => {
-    connection.textContent = 'Sin conexión. Reconectando...';
     setActionsEnabled(false);
     reconnectTimer = setTimeout(connect, 2000);
   });
@@ -513,6 +551,13 @@ function connect() {
 }
 
 toolList.addEventListener('click', (event) => {
+  const deleteButton = event.target.closest('[data-delete-tool-id]');
+  if (deleteButton) {
+    event.stopPropagation();
+    deleteToolById(deleteButton.dataset.deleteToolId);
+    return;
+  }
+
   const button = event.target.closest('[data-tool-id]');
   if (!button) return;
 
@@ -537,17 +582,6 @@ tabButtons.forEach((button) => {
   button.addEventListener('click', () => switchTab(button.dataset.codeTab));
 });
 
-toolSelect.addEventListener('change', () => {
-  if (toolSelect.value) {
-    showTool(toolSelect.value);
-  } else {
-    showEditor();
-  }
-});
-
-editorTabButton.addEventListener('click', showEditor);
-backToEditorButton.addEventListener('click', showEditor);
-
 newButton.addEventListener('click', () => {
   selectedToolId = null;
   setEditorValue(null);
@@ -556,7 +590,7 @@ newButton.addEventListener('click', () => {
 });
 
 saveButton.addEventListener('click', saveCurrentTool);
-deleteButton.addEventListener('click', deleteCurrentTool);
+exportButton.addEventListener('click', exportCurrentTool);
 
 setEditorValue(null);
 switchTab('html');

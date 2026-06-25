@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>N. I. N. A Editor</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='29') }}">
 </head>
 <body>
   <div class="hud-noise" aria-hidden="true"></div>
@@ -12,39 +12,40 @@
 
   <main class="hud-shell tools-page">
     <section class="terminal-panel">
-      <div class="workspace-tabs">
-        <button id="show-editor-tab" class="workspace-tab active" type="button">Editor</button>
-
-        <label class="tool-picker">
-          <span>Tools</span>
-          <select id="tool-tab-select">
-            <option value="">Escoger herramienta...</option>
-          </select>
-        </label>
-
-        <small id="tools-connection">Conectando...</small>
-      </div>
-
       <section id="editor-workspace" class="workspace-panel active" aria-label="Editor de herramientas">
         <div class="tool-editor-grid">
-          <aside class="tool-list-panel">
-            <div class="panel-heading">
-              <p>TOOLS</p>
-              <button id="new-tool" type="button">Nueva</button>
-            </div>
-            <div id="tool-list" class="tool-list"></div>
-          </aside>
-
           <section class="code-panel" aria-label="Editor de herramienta">
+            <nav class="editor-menubar" aria-label="Menú del editor">
+              <details class="editor-menu">
+                <summary>File</summary>
+                <div class="editor-menu-list">
+                  <button id="save-tool" type="button">Guardar</button>
+                  <button id="export-tool" type="button">Exportar HTML</button>
+                </div>
+              </details>
+
+              <details class="editor-menu">
+                <summary>Edit</summary>
+                <div class="editor-menu-list">
+                  <button type="button" disabled>Deshacer</button>
+                  <button type="button" disabled>Rehacer</button>
+                </div>
+              </details>
+
+              <details class="editor-menu tools-menu">
+                <summary>Tools</summary>
+                <div class="editor-menu-list tool-menu-list">
+                  <button id="new-tool" type="button">Nueva</button>
+                  <div id="tool-list" class="tool-list"></div>
+                </div>
+              </details>
+            </nav>
+
             <div class="editor-header">
               <label>
                 <span>Nombre</span>
                 <input id="tool-title" type="text" placeholder="Mi herramienta">
               </label>
-              <div class="editor-actions">
-                <button id="save-tool" type="button">Guardar</button>
-                <button id="delete-tool" class="danger-button" type="button">Borrar</button>
-              </div>
             </div>
 
             <div class="code-tabs" role="tablist" aria-label="Código de herramienta">
@@ -74,7 +75,6 @@
             <p>TOOL</p>
             <h1 id="active-tool-title">Selecciona una herramienta</h1>
           </div>
-          <button id="back-to-editor" type="button">Editor</button>
         </div>
 
         <div id="tools-runtime" class="tools-runtime single-tool"></div>
@@ -82,7 +82,7 @@
     </section>
   </main>
 
-  <script src="{{ url_for('static', filename='js/navbar.js', v='5') }}"></script>
-  <script src="{{ url_for('static', filename='js/tools.js', v='2') }}"></script>
+  <script src="{{ url_for('static', filename='js/navbar.js', v='7') }}"></script>
+  <script src="{{ url_for('static', filename='js/tools.js', v='9') }}"></script>
 </body>
 </html>

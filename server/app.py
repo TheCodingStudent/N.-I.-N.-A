@@ -9,11 +9,18 @@ from pathlib import Path
 from threading import Lock
 from datetime import datetime, timezone
 
-from flask import Flask, render_template
 from flask_sock import Sock
+from flask import Flask, jsonify, render_template
+from markupsafe import Markup, escape
+
+try:
+    import markdown as markdown_lib
+except ImportError:
+    markdown_lib = None
 
 
 JSON_DIR = Path(__file__).with_name("json")
+README_FILE = Path(__file__).resolve().parent.parent / "README.md"
 STATE_FILE = JSON_DIR / "state.json"
 UI_FILE = JSON_DIR / "ui.json"
 TOOLS_FILE = JSON_DIR / "tools.json"
@@ -717,9 +724,33 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/docs")
+def docs():
+    if README_FILE.exists():
+        readme_text = README_FILE.read_text(encoding="utf-8-sig")
+    else:
+        readme_text = "# README no encontrado\n\nCrea un archivo `README.md` en la raíz del proyecto."
+
+    if markdown_lib:
+        readme_html = markdown_lib.markdown(
+            readme_text,
+            extensions=["fenced_code", "tables", "toc"],
+            output_format="html5",
+        )
+    else:
+        readme_html = f"<pre>{escape(readme_text)}</pre>"
+
+    return render_template("docs.html", readme_html=Markup(readme_html))
+
+
 @app.get("/tools")
 def tools():
     return render_template("tools.html")
+
+
+@app.get("/api/tools")
+def api_tools():
+    return jsonify(tool_manager.snapshot())
 
 
 @sock.route("/ws")
