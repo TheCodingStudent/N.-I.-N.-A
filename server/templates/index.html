@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>N. I. N. A</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='13') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20') }}">
 </head>
 <body>
   <div class="hud-noise" aria-hidden="true"></div>
@@ -12,15 +12,7 @@
 
   <main class="hud-shell">
     <section class="terminal-panel">
-      <div class="terminal-grid">
-        <aside class="side-module">
-          <p>LOCAL CORE</p>
-          <strong>Scopes</strong>
-          <small>Dynamic state generated from <code>state.json</code>.</small>
-        </aside>
-
-        <section id="scope-root" class="scope-stack" aria-label="Scopes del sistema"></section>
-      </div>
+      <section id="scope-root" class="scope-stack" aria-label="Scopes del sistema"></section>
     </section>
 
     <footer class="dock-panel">
@@ -37,7 +29,7 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='js/navbar.js', v='3') }}"></script>
+  <script src="{{ url_for('static', filename='js/navbar.js', v='5') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js', v='12') }}"></script>
 </body>
 </html>
