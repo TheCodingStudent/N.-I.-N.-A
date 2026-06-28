@@ -1,9 +1,11 @@
 ﻿const toolList = document.querySelector('#tool-list');
 const variableList = document.querySelector('#variable-list');
+const variableSearch = document.querySelector('#variable-search');
 const runtimeRoot = document.querySelector('#tools-runtime');
 const titleInput = document.querySelector('#tool-title');
 const saveButton = document.querySelector('#save-tool');
 const exportButton = document.querySelector('#export-tool');
+const editorStatus = document.querySelector('#editor-status');
 const newButton = document.querySelector('#new-tool');
 const codePanel = document.querySelector('.code-panel');
 const editorWorkspace = document.querySelector('#editor-workspace');
@@ -15,16 +17,21 @@ const editors = {
   css: document.querySelector('#code-css'),
   js: document.querySelector('#code-js')
 };
+const codeEditors = {};
 
 let socket;
 let reconnectTimer;
 let scopes = {};
+let historyState = { tracked: {}, series: {} };
 let tools = [];
 let selectedToolId = null;
 let runtimeToolId = null;
 let initialRuntimeToolId = new URLSearchParams(location.search).get('tool');
 let activeTab = 'html';
 let actionsEnabled = false;
+let pendingSavedToolId = null;
+let variableSearchTerm = '';
+const requestedHistoryPaths = new Set();
 
 function validId(value) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
@@ -59,11 +66,41 @@ function getClientIdentity() {
 
   return {
     clientType,
-    clientId: `${clientId}_tools`
+    clientId
   };
 }
 
 const identity = getClientIdentity();
+
+function initializeCodeEditors() {
+  if (!window.NinaCodeMirror) return;
+
+  Object.entries(editors).forEach(([name, textarea]) => {
+    codeEditors[name] = window.NinaCodeMirror.createFromTextarea(textarea, name);
+  });
+}
+
+function getCodeValue(name) {
+  return codeEditors[name]?.getValue() ?? editors[name].value;
+}
+
+function setCodeValue(name, value) {
+  if (codeEditors[name]) {
+    codeEditors[name].setValue(value);
+    return;
+  }
+
+  editors[name].value = value;
+}
+
+function insertCodeText(name, text) {
+  if (codeEditors[name]) {
+    codeEditors[name].insertText(text);
+    return;
+  }
+
+  insertAtCursor(editors[name], text);
+}
 
 function createElement(tagName, options = {}) {
   const element = document.createElement(tagName);
@@ -119,6 +156,22 @@ function sendVariable(path, value) {
   }));
 }
 
+function sendTrackHistory(path, points = 1000) {
+  const parsed = parsePath(path);
+  if (!parsed || socket?.readyState !== WebSocket.OPEN) return;
+
+  const maxPoints = Number.isFinite(Number(points)) ? Number(points) : 1000;
+  const trackKey = `${path}:${maxPoints}`;
+  if (requestedHistoryPaths.has(trackKey)) return;
+
+  requestedHistoryPaths.add(trackKey);
+  socket.send(JSON.stringify({
+    type: 'track_history',
+    path,
+    max_points: maxPoints
+  }));
+}
+
 function allVariablePaths() {
   const paths = [];
 
@@ -136,6 +189,7 @@ function allVariablePaths() {
 
     Object.entries(groupValue).forEach(([itemName, itemValue]) => {
       if (!itemValue || typeof itemValue !== 'object' || Array.isArray(itemValue)) return;
+      if (groupName === 'clients' && itemName.endsWith('_tools')) return;
       Object.keys(itemValue).forEach((variable) => {
         paths.push(`${groupName}.${itemName}.${variable}`);
       });
@@ -143,6 +197,34 @@ function allVariablePaths() {
   });
 
   return paths.sort();
+}
+
+function groupedVariablePaths() {
+  const groups = new Map();
+  const query = variableSearchTerm.trim().toLowerCase();
+
+  allVariablePaths().forEach((path) => {
+    const parsed = parsePath(path);
+    if (!parsed) return;
+
+    const value = getValue(path);
+    const searchable = `${path} ${value === null ? 'null' : String(value)}`.toLowerCase();
+    if (query && !searchable.includes(query)) return;
+
+    if (!groups.has(parsed.scope)) {
+      groups.set(parsed.scope, []);
+    }
+
+    groups.get(parsed.scope).push({
+      path,
+      variable: parsed.variable,
+      value
+    });
+  });
+
+  return Array.from(groups.entries())
+    .map(([scope, variables]) => ({ scope, variables }))
+    .sort((first, second) => first.scope.localeCompare(second.scope));
 }
 
 function selectedTool() {
@@ -155,9 +237,9 @@ function runtimeTool() {
 
 function setEditorValue(tool) {
   titleInput.value = tool?.title || '';
-  editors.html.value = tool?.html || defaultHtml();
-  editors.css.value = tool?.css || defaultCss();
-  editors.js.value = tool?.js || defaultJs();
+  setCodeValue('html', tool?.html || defaultHtml());
+  setCodeValue('css', tool?.css || defaultCss());
+  setCodeValue('js', tool?.js || defaultJs());
 }
 
 function defaultHtml() {
@@ -217,36 +299,42 @@ function renderToolList() {
 function renderVariableList() {
   variableList.innerHTML = '';
 
-  const paths = allVariablePaths();
-  if (!paths.length) {
+  const groups = groupedVariablePaths();
+  if (!groups.length) {
     variableList.appendChild(createElement('p', {
       className: 'empty-copy',
-      text: 'No hay variables disponibles.'
+      text: variableSearchTerm ? 'No hay variables que coincidan.' : 'No hay variables disponibles.'
     }));
     return;
   }
 
-  paths.forEach((path) => {
-    const value = getValue(path);
-    const row = createElement('article', { className: 'variable-chip' });
-    row.appendChild(createElement('strong', { text: path }));
-    row.appendChild(createElement('small', { text: value === null ? 'null' : String(value) }));
+  groups.forEach((group) => {
+    const groupElement = createElement('section', { className: 'variable-scope-group' });
+    groupElement.appendChild(createElement('h3', { text: group.scope }));
 
-    const actions = createElement('div', { className: 'snippet-actions' });
-    actions.appendChild(createElement('button', {
-      text: 'Valor',
-      attributes: { type: 'button', 'data-snippet': 'value', 'data-path': path }
-    }));
+    group.variables.forEach(({ path, variable, value }) => {
+      const row = createElement('article', { className: 'variable-chip' });
+      row.appendChild(createElement('strong', { text: variable }));
+      row.appendChild(createElement('small', { text: value === null ? 'null' : String(value) }));
 
-    if (typeof value === 'boolean') {
+      const actions = createElement('div', { className: 'snippet-actions' });
       actions.appendChild(createElement('button', {
-        text: 'Toggle',
-        attributes: { type: 'button', 'data-snippet': 'toggle', 'data-path': path }
+        text: 'Valor',
+        attributes: { type: 'button', 'data-snippet': 'value', 'data-path': path }
       }));
-    }
 
-    row.appendChild(actions);
-    variableList.appendChild(row);
+      if (typeof value === 'boolean') {
+        actions.appendChild(createElement('button', {
+          text: 'Toggle',
+          attributes: { type: 'button', 'data-snippet': 'toggle', 'data-path': path }
+        }));
+      }
+
+      row.appendChild(actions);
+      groupElement.appendChild(row);
+    });
+
+    variableList.appendChild(groupElement);
   });
 }
 
@@ -280,7 +368,84 @@ function renderRuntime() {
 
   wrapper.appendChild(body);
   runtimeRoot.appendChild(wrapper);
+  initializeNinaComponents(body, createNinaApi());
   runToolScript(body, toolDefinition);
+}
+
+function initializeNinaComponents(toolElement, ninaApi) {
+  toolElement.querySelectorAll('nina-graph[path]').forEach((graph) => {
+    renderNinaGraph(graph, ninaApi);
+  });
+}
+
+function graphPointsFromElement(graph) {
+  const rawPoints = graph.getAttribute('points') || graph.getAttribute('max-points') || '80';
+  const points = Number.parseInt(rawPoints, 10);
+  return Number.isFinite(points) ? Math.max(2, Math.min(points, 10000)) : 80;
+}
+
+function renderNinaGraph(graph, ninaApi) {
+  const path = graph.getAttribute('path');
+  const points = graphPointsFromElement(graph);
+  const series = ninaApi.history(path).slice(-points);
+
+  graph.classList.add('nina-graph');
+  ninaApi.trackHistory(path, points);
+
+  if (!series.length) {
+    graph.innerHTML = `
+      <div class="nina-graph-header">
+        <strong>${escapeHtml(path)}</strong>
+        <span>Sin datos</span>
+      </div>
+      <div class="nina-graph-empty">Esperando actualizaciones numéricas...</div>
+    `;
+    return;
+  }
+
+  const values = series.map((point) => Number(point.v)).filter((value) => Number.isFinite(value));
+  if (!values.length) {
+    graph.innerHTML = `
+      <div class="nina-graph-header">
+        <strong>${escapeHtml(path)}</strong>
+        <span>Sin datos numéricos</span>
+      </div>
+    `;
+    return;
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const lastValue = values[values.length - 1];
+  const polyline = values.map((value, index) => {
+    const x = values.length === 1 ? 100 : (index / (values.length - 1)) * 100;
+    const y = 38 - ((value - min) / span) * 34;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(' ');
+
+  graph.innerHTML = `
+    <div class="nina-graph-header">
+      <strong>${escapeHtml(path)}</strong>
+      <span>${escapeHtml(formatGraphValue(lastValue))}</span>
+    </div>
+    <svg class="nina-graph-canvas" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="0" y1="38" x2="100" y2="38"></line>
+      <polyline points="${polyline}"></polyline>
+    </svg>
+    <div class="nina-graph-footer">
+      <span>min ${escapeHtml(formatGraphValue(min))}</span>
+      <span>${values.length}/${points}</span>
+      <span>max ${escapeHtml(formatGraphValue(max))}</span>
+    </div>
+  `;
+}
+
+function formatGraphValue(value) {
+  if (!Number.isFinite(Number(value))) return 'null';
+  return Number(value).toLocaleString('es-MX', {
+    maximumFractionDigits: 3
+  });
 }
 
 function runToolScript(toolElement, toolDefinition) {
@@ -312,6 +477,10 @@ function createNinaApi() {
         callback(getValue(path), path);
       }
     },
+    history(path) {
+      return Array.isArray(historyState?.series?.[path]) ? historyState.series[path] : [];
+    },
+    trackHistory: sendTrackHistory,
     paths: allVariablePaths
   };
 }
@@ -361,23 +530,34 @@ function renderAll() {
 function setActionsEnabled(enabled) {
   actionsEnabled = enabled;
   saveButton.disabled = !enabled;
+  exportButton.disabled = !enabled;
   newButton.disabled = !enabled;
+
+  if (editorStatus && !enabled) {
+    editorStatus.textContent = 'Sin conexión';
+  }
 }
 
 function saveCurrentTool() {
-  if (socket?.readyState !== WebSocket.OPEN) return;
+  if (socket?.readyState !== WebSocket.OPEN) {
+    if (editorStatus) editorStatus.textContent = 'No conectado';
+    return;
+  }
 
   if (!selectedToolId) {
     selectedToolId = createToolId(titleInput.value);
   }
 
+  pendingSavedToolId = selectedToolId;
+  if (editorStatus) editorStatus.textContent = 'Guardando...';
+
   socket.send(JSON.stringify({
     type: 'save_tool',
     tool_id: selectedToolId,
     title: titleInput.value,
-    html: editors.html.value,
-    css: editors.css.value,
-    js: editors.js.value,
+    html: getCodeValue('html'),
+    css: getCodeValue('css'),
+    js: getCodeValue('js'),
     enabled: true
   }));
 }
@@ -392,13 +572,13 @@ function exportCurrentTool() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <style>
-${editors.css.value}
+${getCodeValue('css')}
   </style>
 </head>
 <body>
-${editors.html.value}
+${getCodeValue('html')}
   <script>
-${editors.js.value}
+${getCodeValue('js')}
   <\/script>
 </body>
 </html>
@@ -481,14 +661,52 @@ function safeIdFromPath(path, suffix) {
 
 function insertValueSnippet(path) {
   const elementId = safeIdFromPath(path, 'value');
-  insertAtCursor(editors.html, `\n<span id="${elementId}"></span>`);
-  insertAtCursor(editors.js, `\nNINA.on("${path}", (value) => {\n  tool.querySelector("#${elementId}").textContent = value ?? "null";\n});\n`);
+  insertCodeText('html', `\n<span id="${elementId}"></span>`);
+  insertCodeText('js', `\nNINA.on("${path}", (value) => {\n  tool.querySelector("#${elementId}").textContent = value ?? "null";\n});\n`);
 }
 
 function insertToggleSnippet(path) {
   const elementId = safeIdFromPath(path, 'toggle');
-  insertAtCursor(editors.html, `\n<button id="${elementId}" type="button">Toggle ${path}</button>`);
-  insertAtCursor(editors.js, `\ntool.querySelector("#${elementId}").addEventListener("click", () => {\n  NINA.toggle("${path}");\n});\n`);
+  insertCodeText('html', `\n<button id="${elementId}" type="button">Toggle ${path}</button>`);
+  insertCodeText('js', `\ntool.querySelector("#${elementId}").addEventListener("click", () => {\n  NINA.toggle("${path}");\n});\n`);
+}
+
+function promptVariablePath() {
+  const fallback = allVariablePaths()[0] || 'global.testing';
+  const path = window.prompt('Variable path', fallback);
+  return parsePath(path) ? path : null;
+}
+
+function insertIndicatorComponent(path) {
+  insertCodeText('html', `\n<span class="nina-indicator" data-path="${path}">${path}</span>`);
+  insertCodeText('js', `\nNINA.on("${path}", (value) => {\n  const indicator = tool.querySelector('[data-path="${path}"]');\n  indicator.textContent = value ? "Encendido" : "Apagado";\n  indicator.dataset.active = Boolean(value);\n});\n`);
+}
+
+function insertValueComponent(path) {
+  insertCodeText('html', `\n<span class="nina-value" data-path="${path}"></span>`);
+  insertCodeText('js', `\nNINA.on("${path}", (value) => {\n  tool.querySelector('[data-path="${path}"]').textContent = value ?? "null";\n});\n`);
+}
+
+function insertToggleComponent(path) {
+  insertCodeText('html', `\n<button class="nina-toggle" data-path="${path}" type="button">Toggle ${path}</button>`);
+  insertCodeText('js', `\ntool.querySelector('[data-path="${path}"]').addEventListener("click", () => {\n  NINA.toggle("${path}");\n});\n`);
+}
+
+function insertGraphComponent(path) {
+  insertCodeText('html', `\n<nina-graph path="${path}" points="80"></nina-graph>`);
+}
+
+function insertComponentSnippet(componentName) {
+  const path = promptVariablePath();
+  if (!path) return;
+
+  if (componentName === 'indicator') insertIndicatorComponent(path);
+  if (componentName === 'value') insertValueComponent(path);
+  if (componentName === 'toggle') insertToggleComponent(path);
+  if (componentName === 'graph') insertGraphComponent(path);
+
+  switchTab('html');
+  showEditor();
 }
 
 function switchTab(tabName) {
@@ -501,6 +719,7 @@ function switchTab(tabName) {
 
   Object.entries(editors).forEach(([name, editor]) => {
     editor.classList.toggle('active', name === tabName);
+    codeEditors[name]?.setActive(name === tabName);
   });
 }
 
@@ -531,7 +750,15 @@ function connect() {
     if (message.type !== 'state') return;
 
     scopes = message.scopes || {};
+    historyState = message.history || { tracked: {}, series: {} };
     tools = Array.isArray(message.tools?.tools) ? message.tools.tools : [];
+
+    if (pendingSavedToolId && tools.some((tool) => tool.id === pendingSavedToolId)) {
+      pendingSavedToolId = null;
+      if (editorStatus) editorStatus.textContent = 'Guardado';
+    } else if (editorStatus) {
+      editorStatus.textContent = 'Conectado';
+    }
 
     if (selectedToolId && !tools.some((tool) => tool.id === selectedToolId)) {
       selectedToolId = tools[0]?.id ?? null;
@@ -592,6 +819,25 @@ newButton.addEventListener('click', () => {
 saveButton.addEventListener('click', saveCurrentTool);
 exportButton.addEventListener('click', exportCurrentTool);
 
+variableSearch.addEventListener('input', () => {
+  variableSearchTerm = variableSearch.value;
+  renderVariableList();
+});
+
+document.querySelectorAll('[data-component]').forEach((button) => {
+  button.addEventListener('click', () => insertComponentSnippet(button.dataset.component));
+});
+
+document.addEventListener('click', (event) => {
+  const currentMenu = event.target.closest('details');
+
+  document.querySelectorAll('details[open]').forEach((menu) => {
+    if (menu === currentMenu) return;
+    menu.open = false;
+  });
+});
+
+initializeCodeEditors();
 setEditorValue(null);
 switchTab('html');
 showEditor();

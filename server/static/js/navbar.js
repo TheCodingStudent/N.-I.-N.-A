@@ -4,14 +4,27 @@ if (navbarRoot) {
   navbarRoot.innerHTML = `
     <nav class="app-navbar" aria-label="Navegacion principal">
       <a class="brand" href="/">
-        <span>N. I. N. A</span>
+        <span class="brand-label">N. I. N. A</span>
+        <span class="brand-icon" aria-hidden="true">N.I.N.A</span>
       </a>
       <div class="nav-links">
-        <a href="/">CORE</a>
-        <a href="/tools">EDITOR</a>
-        <a href="/docs">DOCS</a>
+        <a href="/" title="CORE">
+          <span class="nav-label">CORE</span>
+          <span class="nav-icon" aria-hidden="true">●</span>
+        </a>
+        <a href="/tools" title="EDITOR">
+          <span class="nav-label">EDITOR</span>
+          <span class="nav-icon" aria-hidden="true">✎</span>
+        </a>
+        <a href="/docs" title="DOCS">
+          <span class="nav-label">DOCS</span>
+          <span class="nav-icon" aria-hidden="true">≡</span>
+        </a>
         <details class="nav-tool-menu">
-          <summary>TOOLS</summary>
+          <summary title="TOOLS">
+            <span class="nav-label">TOOLS</span>
+            <span class="nav-icon" aria-hidden="true">▾</span>
+          </summary>
           <div id="nav-tool-list" class="nav-tool-list">
             <span>Sin tools</span>
           </div>
@@ -45,4 +58,12 @@ if (navbarRoot) {
     .catch(() => {
       toolList.innerHTML = '<span>Sin conexión</span>';
     });
+  document.addEventListener('click', (event) => {
+    const currentMenu = event.target.closest('details');
+
+    document.querySelectorAll('details[open]').forEach((menu) => {
+      if (menu === currentMenu) return;
+      menu.open = false;
+    });
+  });
 }

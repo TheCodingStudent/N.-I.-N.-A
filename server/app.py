@@ -1,6 +1,7 @@
 ﻿import re
 import copy
 import json
+import math
 import uuid
 import socket
 import atexit
@@ -10,8 +11,8 @@ from threading import Lock
 from datetime import datetime, timezone
 
 from flask_sock import Sock
-from flask import Flask, jsonify, render_template
 from markupsafe import Markup, escape
+from flask import Flask, jsonify, render_template, request
 
 try:
     import markdown as markdown_lib
@@ -24,6 +25,7 @@ README_FILE = Path(__file__).resolve().parent.parent / "README.md"
 STATE_FILE = JSON_DIR / "state.json"
 UI_FILE = JSON_DIR / "ui.json"
 TOOLS_FILE = JSON_DIR / "tools.json"
+HISTORY_FILE = JSON_DIR / "history.json"
 
 VALID_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 VALID_VALUE_TYPES = (bool, int, float, str, type(None))
@@ -50,6 +52,11 @@ DEFAULT_UI = {
 
 DEFAULT_TOOLS = {
     "tools": []
+}
+
+DEFAULT_HISTORY = {
+    "tracked": {},
+    "series": {}
 }
 
 
@@ -396,6 +403,140 @@ class UiManager:
             return True
 
 
+class HistoryManager:
+    """Owns history.json and records only variables requested by graphs."""
+
+    def __init__(self, store):
+        self.store = store
+        self.lock = Lock()
+        self.history = self._load()
+
+    def _load(self):
+        loaded_history = self.store.load()
+
+        if not isinstance(loaded_history, dict):
+            loaded_history = copy.deepcopy(DEFAULT_HISTORY)
+
+        changed = False
+        for key, default_value in DEFAULT_HISTORY.items():
+            if key not in loaded_history or not isinstance(loaded_history[key], type(default_value)):
+                loaded_history[key] = copy.deepcopy(default_value)
+                changed = True
+
+        if changed:
+            self.store.save(loaded_history)
+
+        return loaded_history
+
+    @staticmethod
+    def path_from_parts(scope, variable):
+        return f"{scope}.{variable}"
+
+    @staticmethod
+    def parse_path(path):
+        if not isinstance(path, str):
+            return None
+
+        parts = path.split(".")
+        if len(parts) == 2:
+            scope, variable = parts
+        elif len(parts) == 3 and parts[0] in {"clients", "devices"}:
+            scope = f"{parts[0]}.{parts[1]}"
+            variable = parts[2]
+        else:
+            return None
+
+        if not Validator.valid_scope(scope) or not Validator.valid_variable(variable):
+            return None
+
+        return scope, variable
+
+    @staticmethod
+    def numeric_value(value):
+        if isinstance(value, bool):
+            return 1 if value else 0
+
+        if isinstance(value, (int, float)) and math.isfinite(value):
+            return value
+
+        return None
+
+    def snapshot(self, path=None, max_points=None):
+        with self.lock:
+            if path:
+                points = copy.deepcopy(self.history.get("series", {}).get(path, []))
+                if isinstance(max_points, int) and max_points > 0:
+                    points = points[-max_points:]
+
+                return {
+                    "tracked": {
+                        path: copy.deepcopy(self.history.get("tracked", {}).get(path))
+                    } if path in self.history.get("tracked", {}) else {},
+                    "series": {path: points},
+                }
+
+            return copy.deepcopy(self.history)
+
+    def track(self, path, max_points=1000):
+        parsed = self.parse_path(path)
+        if not parsed:
+            return False
+
+        try:
+            max_points = int(max_points)
+        except (TypeError, ValueError):
+            max_points = 1000
+
+        max_points = max(2, min(max_points, 10000))
+
+        with self.lock:
+            tracked = self.history.setdefault("tracked", {})
+            series = self.history.setdefault("series", {})
+            current_metadata = tracked.get(path)
+
+            if (
+                isinstance(current_metadata, dict)
+                and current_metadata.get("max_points") == max_points
+                and path in series
+            ):
+                return False
+
+            tracked[path] = {
+                "max_points": max_points,
+                "created_at": current_metadata.get("created_at") if isinstance(current_metadata, dict) else now_iso(),
+                "updated_at": now_iso(),
+            }
+            series.setdefault(path, [])
+            self.store.save(self.history)
+            return True
+
+    def record(self, scope, variable, value):
+        path = self.path_from_parts(scope, variable)
+        numeric_value = self.numeric_value(value)
+
+        if numeric_value is None:
+            return False
+
+        with self.lock:
+            tracked = self.history.setdefault("tracked", {})
+            if path not in tracked:
+                return False
+
+            max_points = tracked[path].get("max_points", 1000)
+            points = self.history.setdefault("series", {}).setdefault(path, [])
+            points.append({
+                "t": now_iso(),
+                "v": numeric_value,
+            })
+
+            if len(points) > max_points:
+                del points[:-max_points]
+
+            tracked[path]["updated_at"] = now_iso()
+            self.store.save(self.history)
+            return True
+
+
 class ToolManager:
     """Owns tools.json and custom HTML/CSS/JS tools."""
 
@@ -502,6 +643,10 @@ class ConnectionManager:
             self.clients.discard(client)
             return self.scopes.pop(client, None)
 
+    def has_scope(self, scope):
+        with self.lock:
+            return scope in self.scopes.values()
+
     def bind_scope(self, client, scope):
         with self.lock:
             self.scopes[client] = scope
@@ -537,10 +682,11 @@ class ConnectionManager:
 class NinaServer:
     """Coordinates state, UI metadata and WebSocket messages."""
 
-    def __init__(self, state, ui, tools, connections):
+    def __init__(self, state, ui, tools, history, connections):
         self.state = state
         self.ui = ui
         self.tools = tools
+        self.history = history
         self.connections = connections
 
     def state_message(self):
@@ -549,6 +695,7 @@ class NinaServer:
             **self.state.snapshot(),
             "ui": self.ui.snapshot(),
             "tools": self.tools.snapshot(),
+            "history": self.history.snapshot(),
         }
 
     def broadcast_state(self):
@@ -571,7 +718,11 @@ class NinaServer:
                 self.handle_message(client, message)
         finally:
             connection_scope = self.connections.remove(client)
-            if connection_scope and self.state.mark_offline(connection_scope):
+            if (
+                connection_scope
+                and not self.connections.has_scope(connection_scope)
+                and self.state.mark_offline(connection_scope)
+            ):
                 self.broadcast_state()
 
     @staticmethod
@@ -623,6 +774,10 @@ class NinaServer:
             self._handle_delete_tool(message)
             return
 
+        if message_type == "track_history":
+            self._handle_track_history(message)
+            return
+
         if message_type == "set_variable":
             self._handle_set_variable(message)
 
@@ -664,7 +819,18 @@ class NinaServer:
         if scope is None:
             return
 
-        if self.state.set_variable(scope, variable, message.get("value")):
+        value = message.get("value")
+        state_changed = self.state.set_variable(scope, variable, value)
+        history_changed = self.history.record(scope, variable, value)
+
+        if state_changed or history_changed:
+            self.broadcast_state()
+
+    def _handle_track_history(self, message):
+        path = message.get("path")
+        max_points = message.get("max_points") or message.get("points")
+
+        if self.history.track(path, max_points):
             self.broadcast_state()
 
     def _handle_delete_device(self, message):
@@ -700,11 +866,13 @@ sock = Sock(app)
 state_store = JsonStore(STATE_FILE, DEFAULT_STATE)
 ui_store = JsonStore(UI_FILE, DEFAULT_UI)
 tools_store = JsonStore(TOOLS_FILE, DEFAULT_TOOLS)
+history_store = JsonStore(HISTORY_FILE, DEFAULT_HISTORY)
 state_manager = StateManager(state_store)
 ui_manager = UiManager(ui_store)
 tool_manager = ToolManager(tools_store)
+history_manager = HistoryManager(history_store)
 connections = ConnectionManager()
-nina = NinaServer(state_manager, ui_manager, tool_manager, connections)
+nina = NinaServer(state_manager, ui_manager, tool_manager, history_manager, connections)
 
 atexit.register(state_manager.mark_server_offline)
 
@@ -753,6 +921,13 @@ def api_tools():
     return jsonify(tool_manager.snapshot())
 
 
+@app.get("/api/history")
+def api_history():
+    path = request.args.get("path")
+    max_points = request.args.get("max_points", type=int)
+    return jsonify(history_manager.snapshot(path, max_points))
+
+
 @sock.route("/ws")
 def websocket(client):
     nina.handle_client(client)
@@ -760,4 +935,3 @@ def websocket(client):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-

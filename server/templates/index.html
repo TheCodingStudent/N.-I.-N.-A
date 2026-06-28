@@ -4,32 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>N. I. N. A</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='29') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='37') }}">
 </head>
 <body>
   <div class="hud-noise" aria-hidden="true"></div>
   <div id="navbar-root"></div>
 
-  <main class="hud-shell">
+  <main class="hud-shell core-page">
+    <p id="client-identity" class="client-badge"></p>
+
     <section class="terminal-panel">
       <section id="scope-root" class="scope-stack" aria-label="Scopes del sistema"></section>
     </section>
-
-    <footer class="dock-panel">
-      <div class="dock-icons" aria-hidden="true">
-        <span>HOME</span>
-        <span>CORE</span>
-        <span>LINK</span>
-        <span>MAIL</span>
-      </div>
-      <div class="connection-copy">
-        <p id="connection">Conectando con el servidor...</p>
-        <p id="client-identity"></p>
-      </div>
-    </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='js/navbar.js', v='7') }}"></script>
-  <script src="{{ url_for('static', filename='js/app.js', v='12') }}"></script>
+  <script src="{{ url_for('static', filename='js/navbar.js', v='10') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='13') }}"></script>
 </body>
 </html>

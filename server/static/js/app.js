@@ -338,11 +338,11 @@ function connect() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   socket = new WebSocket(`${protocol}://${location.host}/ws`);
 
-  connection.textContent = 'Conectando con el servidor...';
+  if (connection) connection.textContent = 'Conectando con el servidor...';
   setActionsEnabled(false);
 
   socket.addEventListener('open', () => {
-    connection.textContent = 'Sincronizando estado...';
+    if (connection) connection.textContent = 'Sincronizando estado...';
     registerClient();
   });
 
@@ -350,13 +350,13 @@ function connect() {
     const message = JSON.parse(data);
     if (message.type === 'state') {
       renderState(message.scopes, message.ui);
-      connection.textContent = 'Servidor conectado';
+      if (connection) connection.textContent = 'Servidor conectado';
       setActionsEnabled(true);
     }
   });
 
   socket.addEventListener('close', () => {
-    connection.textContent = 'Sin conexion. Reconectando...';
+    if (connection) connection.textContent = 'Sin conexion. Reconectando...';
     setActionsEnabled(false);
     reconnectTimer = setTimeout(connect, 2000);
   });

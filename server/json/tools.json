@@ -1,24 +1,14 @@
 {
   "tools": [
     {
-      "id": "testing_8fa56e",
-      "title": "Testing",
-      "html": "<div class=\"nina-card\">\n  <h2>Crear variable</h2>\n  <span id=\"global_span\">False</span>\n  <button id=\"create_global\" type=\"button\">Toggle global.testing</button>\n</div>",
-      "css": ".nina-card {\n  display: flex;\n  flex-direction: column;\n  padding: 14px;\n  border: 1px solid rgba(255,255,255,.55);\n  border-radius: 10px;\n  background: rgba(255,255,255,.08);\n}\n\n.nina-card span {\n  width: 100%;\n  text-align: center;\n  color: rgb(0, 255, 0);\n}",
-      "js": "NINA.on(\"global.testing\", (value) => {\n  tool.querySelector(\"#global_span\").textContent = value ? \"Encendido\" : \"Apagado\";\n});\n\ntool.querySelector(\"#create_global\").addEventListener(\"click\", () => {\n  NINA.toggle(\"global.testing\");\n});",
+      "id": "led_esp32_a5e123",
+      "title": "LED ESP32",
+      "html": "<div class=\"nina-card\">\n  <h2>Mi ESP32</h2>\n  <button id=\"devices_esp32_demo_active_toggle\" type=\"button\">Toggle devices.esp32_demo.active</button>\n</div>",
+      "css": ".nina-card {\n  padding: 14px;\n  border: 1px solid rgba(255,255,255,.55);\n  border-radius: 10px;\n  background: rgba(255,255,255,.08);\n}",
+      "js": "tool.querySelector(\"#devices_esp32_demo_active_toggle\").addEventListener(\"click\", () => {\n  NINA.toggle(\"devices.esp32_demo.active\");\n});\n// tool = contenedor de esta herramienta\n// NINA.get(path), NINA.set(path, value), NINA.toggle(path), NINA.on(path, callback)\n",
       "enabled": true,
-      "updated_at": "2026-06-24T17:20:46.667528+00:00",
-      "created_at": "2026-06-24T17:13:48.700619+00:00"
-    },
-    {
-      "id": "green_11bd32",
-      "title": "green",
-      "html": "<div class=\"nina-card\">\n  <h2>Mi herramienta</h2>\n  <p>Selecciona una variable del sidebar.</p>\n</div>",
-      "css": ".nina-card {\n  padding: 14px;\n  border: 1px solid rgba(255,255,255,.55);\n  border-radius: 10px;\n  background: rgba(0,255,0,.08);\n}",
-      "js": "// tool = contenedor de esta herramienta\n// NINA.get(path), NINA.set(path, value), NINA.toggle(path), NINA.on(path, callback)\n",
-      "enabled": true,
-      "updated_at": "2026-06-25T15:18:19.933647+00:00",
-      "created_at": "2026-06-25T15:18:19.933707+00:00"
+      "updated_at": "2026-06-28T04:02:13.998835+00:00",
+      "created_at": "2026-06-28T03:55:32.551448+00:00"
     }
   ]
 }

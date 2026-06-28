@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>N. I. N. A Editor</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='29') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='37') }}">
 </head>
 <body>
   <div class="hud-noise" aria-hidden="true"></div>
@@ -21,6 +21,7 @@
                 <div class="editor-menu-list">
                   <button id="save-tool" type="button">Guardar</button>
                   <button id="export-tool" type="button">Exportar HTML</button>
+                  <small id="editor-status" class="editor-status">Conectando...</small>
                 </div>
               </details>
 
@@ -29,6 +30,16 @@
                 <div class="editor-menu-list">
                   <button type="button" disabled>Deshacer</button>
                   <button type="button" disabled>Rehacer</button>
+                </div>
+              </details>
+
+              <details class="editor-menu components-menu">
+                <summary>Components</summary>
+                <div class="editor-menu-list component-menu-list">
+                  <button type="button" data-component="indicator">Indicator</button>
+                  <button type="button" data-component="value">Value</button>
+                  <button type="button" data-component="toggle">Toggle</button>
+                  <button type="button" data-component="graph">Graph</button>
                 </div>
               </details>
 
@@ -64,6 +75,7 @@
               <p>VARIABLES</p>
               <small>Insertar snippets</small>
             </div>
+            <input id="variable-search" class="variable-search" type="search" placeholder="Buscar variable..." autocomplete="off">
             <div id="variable-list" class="variable-list"></div>
           </aside>
         </div>
@@ -82,7 +94,8 @@
     </section>
   </main>
 
-  <script src="{{ url_for('static', filename='js/navbar.js', v='7') }}"></script>
-  <script src="{{ url_for('static', filename='js/tools.js', v='9') }}"></script>
+  <script src="{{ url_for('static', filename='js/navbar.js', v='10') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/codemirror/nina-codemirror.bundle.js', v='4') }}"></script>
+  <script src="{{ url_for('static', filename='js/tools.js', v='14') }}"></script>
 </body>
 </html>
